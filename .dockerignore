@@ -1,0 +1,11 @@
+.git
+.github
+dist
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.log
+.DS_Store
+*.tact
+bin/

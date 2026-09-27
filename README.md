@@ -4,6 +4,7 @@
 
 [![Release: v1.0.0](https://img.shields.io/badge/Release-v1.0.0-blue.svg)](dist/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](LICENSE)
+[![Packages: GHCR](https://img.shields.io/badge/GitHub_Packages-ghcr.io-blue?logo=docker)](https://github.com/muhammetatmaca/ada-spark-compression/pkgs/container/ada-spark-compression)
 [![Core: Ada SPARK 2014](https://img.shields.io/badge/Core-Ada_SPARK_2014-darkblue.svg)](#)
 [![Safety: DO--178C_Level--A](https://img.shields.io/badge/Safety-DO--178C_Level--A_Certified-cyan.svg)](#)
 [![Standard: STANAG--4586](https://img.shields.io/badge/Standard-STANAG--4586_Rev.3-blueviolet.svg)](#)
@@ -222,6 +223,28 @@ sudo ./install.sh
   make
   ./tactical_embedded_core tx 5555 192.168.1.100 5555
   ```
+
+---
+
+### 3. GitHub Packages & Docker Konteyneri ile 1-Komutta Çalıştırma
+
+Sunucular, bulut altyapıları veya Linux kartlar (Raspberry Pi 4/5, Jetson Orin) üzerinde hiçbir bağımlılık kurmadan doğrudan çalıştırmak için resmi OCI konteynerini kullanabilirsiniz:
+
+```bash
+# 1. GitHub Container Registry (GHCR) üzerinden resmi konteyneri çekin:
+docker pull ghcr.io/muhammetatmaca/ada-spark-compression:latest
+
+# 2. Aviyonik Sunucuyu UDP telemetri portlarıyla arka planda başlatın:
+docker run -d \
+  -p 5555:5555/udp \
+  -p 5556:5556/udp \
+  --name ada-spark-server \
+  ghcr.io/muhammetatmaca/ada-spark-compression:latest
+
+# 3. İsteğe bağlı olarak Konteyner içinde CLI sıkıştırma komutunu çalıştırın:
+docker run --rm -v $(pwd):/workspace ghcr.io/muhammetatmaca/ada-spark-compression:latest \
+  cli.py compress /workspace/data /workspace/data.tact
+```
 
 ---
 
