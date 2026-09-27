@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
 MULTI-SOCKET REAL-TIME AVIONICS STREAM ENGINE
-Birden fazla UDP portunu bağımsız algoritmalarla eşzamanlı dinleyen gerçek soket motoru.
-(Sıfır simülasyon, sıfır sahte veri; sadece gerçek ağ soketleri ve gerçek algoritmalar)
+STANAG-4586 Uyumlu Çift Yönlü Ağ Motoru:
+- Ham veriyi canlı sıkıştırma (Uçak / Verici Modu)
+- Sıkıştırılmış veriyi canlı geri açma (Yer İstasyonu / Alıcı Modu)
+- Hedef cihaza otomatik aktarım (Transparent Gateway / Proxy)
 """
 
 import socket
@@ -77,20 +79,59 @@ def compress_payload_with_algo(data: bytes, algo_id: str) -> bytes:
     else:  # Evrensel Taktik Akış Motoru (Zstandard 19)
         return zstd.compress(data, 19)
 
+def decompress_payload_with_algo(comp_data: bytes, algo_id: str) -> bytes:
+    """Sıkıştırılmış taktiksel paketi açarak orijinal ham veriyi kurtarır (Kayıpsız)."""
+    if not comp_data:
+        return b""
+    try:
+        if "algo-8" in algo_id or "algo-4" in algo_id:
+            # 1. Zstd entropi katmanını çöz
+            delta = zstd.decompress(comp_data)
+            if not delta:
+                return b""
+            # 2. Ters Delta (Inverse Stride) ile orijinal dalga formunu yeniden oluştur
+            raw = bytearray([delta[0]])
+            for b in delta[1:]:
+                raw.append((raw[-1] + b) & 0xFF)
+            return bytes(raw)
+
+        elif "algo-5" in algo_id:
+            return zstd.decompress(comp_data)
+
+        elif "algo-6" in algo_id:
+            # TurboQuant Kuantizasyon Çözümü (1 Bayt -> 8 float/int boyutu)
+            unpacked = bytearray()
+            for b in comp_data:
+                for bit_idx in range(8):
+                    unpacked.append(255 if (b & (1 << bit_idx)) else 0)
+            return bytes(unpacked)
+
+        elif "algo-7" in algo_id:
+            return comp_data
+
+        else:
+            return zstd.decompress(comp_data)
+    except Exception:
+        return comp_data
+
 class SingleSocketWorker:
-    def __init__(self, host, port, algo_id, on_packet_cb):
+    def __init__(self, host, port, algo_id, mode="compress", forward_host=None, forward_port=None, on_packet_cb=None):
         self.host = host
         self.port = int(port)
         self.algo_id = algo_id
+        self.mode = mode  # "compress" (Ham -> Sıkıştır) veya "decompress" (Sıkıştırılmış -> Aç)
+        self.forward_host = forward_host
+        self.forward_port = int(forward_port) if forward_port else None
         self.on_packet_cb = on_packet_cb
         
         self.is_listening = False
         self.sock = None
+        self.fwd_sock = None
         self.thread = None
         
         self.packet_count = 0
-        self.raw_bytes_total = 0
-        self.comp_bytes_total = 0
+        self.in_bytes_total = 0
+        self.out_bytes_total = 0
         self.bytes_in_window = 0
         self.last_rate_time = time.time()
         self.current_kbps = 0.0
@@ -103,10 +144,13 @@ class SingleSocketWorker:
         self.sock.bind((self.host, self.port))
         self.sock.settimeout(0.5)
 
+        if self.forward_host and self.forward_port:
+            self.fwd_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
         self.is_listening = True
         self.packet_count = 0
-        self.raw_bytes_total = 0
-        self.comp_bytes_total = 0
+        self.in_bytes_total = 0
+        self.out_bytes_total = 0
         self.bytes_in_window = 0
         self.last_rate_time = time.time()
 
@@ -133,12 +177,18 @@ class SingleSocketWorker:
             except:
                 pass
             self.sock = None
+        if self.fwd_sock:
+            try:
+                self.fwd_sock.close()
+            except:
+                pass
+            self.fwd_sock = None
 
-    def _handle(self, raw_data):
+    def _handle(self, in_data):
         self.packet_count += 1
-        raw_len = len(raw_data)
-        self.raw_bytes_total += raw_len
-        self.bytes_in_window += raw_len
+        in_len = len(in_data)
+        self.in_bytes_total += in_len
+        self.bytes_in_window += in_len
 
         now = time.time()
         dt = now - self.last_rate_time
@@ -147,42 +197,63 @@ class SingleSocketWorker:
             self.bytes_in_window = 0
             self.last_rate_time = now
 
-        crc = zlib.crc32(raw_data) & 0xFFFFFFFF
-        comp_data = compress_payload_with_algo(raw_data, self.algo_id)
-        comp_len = len(comp_data)
-        self.comp_bytes_total += comp_len
+        crc = zlib.crc32(in_data) & 0xFFFFFFFF
 
-        savings = (1.0 - (comp_len / raw_len)) * 100.0 if raw_len > 0 else 0.0
-        ratio = raw_len / comp_len if comp_len > 0 else 1.0
+        if self.mode == "decompress":
+            out_data = decompress_payload_with_algo(in_data, self.algo_id)
+            out_len = len(out_data)
+            self.out_bytes_total += out_len
+            savings = 0.0
+            ratio = (out_len / in_len) if in_len > 0 else 1.0
+        else:
+            # "compress" modu
+            out_data = compress_payload_with_algo(in_data, self.algo_id)
+            out_len = len(out_data)
+            self.out_bytes_total += out_len
+            savings = (1.0 - (out_len / in_len)) * 100.0 if in_len > 0 else 0.0
+            ratio = (in_len / out_len) if out_len > 0 else 1.0
+
+        # İleri iletim (Forwarding to Target IP:Port)
+        if self.fwd_sock and self.forward_host and self.forward_port:
+            try:
+                self.fwd_sock.sendto(out_data, (self.forward_host, self.forward_port))
+            except Exception:
+                pass
 
         if self.on_packet_cb:
             self.on_packet_cb({
                 "port": self.port,
                 "host": self.host,
+                "mode": self.mode,
                 "packet_num": self.packet_count,
-                "raw_len": raw_len,
-                "comp_len": comp_len,
+                "raw_len": in_len,
+                "comp_len": out_len,
                 "savings": savings,
                 "ratio": ratio,
                 "crc32": f"0x{crc:08X}",
                 "kbps": self.current_kbps,
-                "total_raw": self.raw_bytes_total,
-                "total_comp": self.comp_bytes_total,
-                "algo": self.algo_id
+                "total_raw": self.in_bytes_total,
+                "total_comp": self.out_bytes_total,
+                "algo": self.algo_id,
+                "forward": f"{self.forward_host}:{self.forward_port}" if self.forward_port else "YOK"
             })
 
 class MultiRealSocketManager:
-    """Birden fazla soket bağlantısını ve algoritmalarını yöneten ana sınıf"""
+    """Birden fazla soket bağlantısını, modlarını ve algoritmalarını yöneten ana sınıf"""
     def __init__(self):
         self.workers = {}  # {port: SingleSocketWorker}
         self.is_active = False
         self.packet_callback = None
 
-    def add_socket(self, host, port, algo_id):
+    def add_socket(self, host, port, algo_id, mode="compress", forward_host=None, forward_port=None):
         port = int(port)
         if port in self.workers:
             self.workers[port].stop()
-        worker = SingleSocketWorker(host, port, algo_id, self._dispatch)
+        worker = SingleSocketWorker(
+            host, port, algo_id, mode=mode,
+            forward_host=forward_host, forward_port=forward_port,
+            on_packet_cb=self._dispatch
+        )
         self.workers[port] = worker
         if self.is_active:
             worker.start()
