@@ -40,8 +40,8 @@ def make_pc_release():
         if os.path.exists(src):
             shutil.copy2(src, pc_folder)
 
-    # Klasörler (scripts, bin)
-    dirs_to_copy = ["scripts", "bin"]
+    # Klasörler (scripts, bin, docs)
+    dirs_to_copy = ["scripts", "bin", "docs"]
     for d in dirs_to_copy:
         src = os.path.join(BASE_DIR, d)
         if os.path.exists(src):
