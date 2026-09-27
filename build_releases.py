@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-TACTICAL ARCHIVE - RELEASE PACKAGER SCRIPT
+ADA SPARK SIKIŞTIRMA SÜİTİ - SÜRÜM ÜRETİM ROBOTU (RELEASE BUILDER)
 Hem PC (Sunucu / Yer İstasyonu) hem de Gömülü Sistemler (İstemci) için
 dağıtıma hazır resmi sürüm arşivlerini (.zip / .tar.gz) oluşturan üretim aracı.
 """
@@ -25,7 +25,7 @@ def compute_sha256(filepath):
 
 def make_pc_release():
     print("[*] 1/2: PC Sürümü (Sunucu / Yer İstasyonu Süiti) Paketleniyor...")
-    pc_folder = os.path.join(DIST_DIR, f"Tactical_Archive_PC_Server_{VERSION}")
+    pc_folder = os.path.join(DIST_DIR, f"Ada_SPARK_Compression_PC_Server_{VERSION}")
     if os.path.exists(pc_folder):
         shutil.rmtree(pc_folder)
     os.makedirs(pc_folder, exist_ok=True)
@@ -50,7 +50,7 @@ def make_pc_release():
     # PC Release Beni Oku
     pc_readme = os.path.join(pc_folder, "RELEASE_PC_SERVER.md")
     with open(pc_readme, "w", encoding="utf-8") as f:
-        f.write(f"""# ⚡ Tactical Archive Studio - PC / Server Edition ({VERSION})
+        f.write(f"""# 🛡️ Ada SPARK Sıkıştırma Süiti - PC / Server Edition ({VERSION})
 ### STANAG-4586 & DO-178C Level-A Yer İstasyonu & Aviyonik Veri Sunucusu
 
 Bu paket, **Yer Kontrol İstasyonları (GCS), Komuta Kontrol Merkezleri ve PC İş İstasyonları** için hazırlanmış tam sürüm paketidir.
@@ -59,7 +59,7 @@ Bu paket, **Yer Kontrol İstasyonları (GCS), Komuta Kontrol Merkezleri ve PC İ
 
 ## 🚀 Başlatma Seçenekleri
 
-### 1. Masaüstü Grafik Arayüzü (PRO Beyaz GUI):
+### 1. Masaüstü Grafik Arayüzü (PRO Beyaz Kokpit GUI):
 `start.bat` dosyasına çift tıklayın veya terminalden:
 ```bash
 python app.py
@@ -80,7 +80,7 @@ python tactical_server.py --ports 5555:algo-8:decompress 5556:algo-6:decompress 
 """)
 
     # Zip oluştur
-    zip_path = os.path.join(DIST_DIR, f"Tactical_Archive_PC_Server_{VERSION}.zip")
+    zip_path = os.path.join(DIST_DIR, f"Ada_SPARK_Compression_PC_Server_{VERSION}.zip")
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for root, _, files in os.walk(pc_folder):
             for file in files:
@@ -94,7 +94,7 @@ python tactical_server.py --ports 5555:algo-8:decompress 5556:algo-6:decompress 
 
 def make_embedded_release():
     print("[*] 2/2: Gömülü Sistem Sürümü (İstemci / Airborne Client SDK) Paketleniyor...")
-    emb_folder = os.path.join(DIST_DIR, f"Tactical_Archive_Embedded_Client_{VERSION}")
+    emb_folder = os.path.join(DIST_DIR, f"Ada_SPARK_Compression_Embedded_Client_{VERSION}")
     if os.path.exists(emb_folder):
         shutil.rmtree(emb_folder)
     os.makedirs(emb_folder, exist_ok=True)
@@ -114,7 +114,7 @@ def make_embedded_release():
     # Embedded Release Beni Oku
     emb_readme = os.path.join(emb_folder, "RELEASE_EMBEDDED_CLIENT.md")
     with open(emb_readme, "w", encoding="utf-8") as f:
-        f.write(f"""# 📡 Tactical Archive - Embedded Client SDK ({VERSION})
+        f.write(f"""# 📡 Ada SPARK Sıkıştırma - Embedded Client SDK ({VERSION})
 ### STANAG-4586 & DO-178C Level-A Gömülü İstemci Kiti
 
 Hedef Donanımlar:
@@ -146,12 +146,12 @@ make
 """)
 
     # 1. Tar.gz oluştur (Linux / Pi / Jetson için)
-    tar_path = os.path.join(DIST_DIR, f"Tactical_Archive_Embedded_Client_{VERSION}.tar.gz")
+    tar_path = os.path.join(DIST_DIR, f"Ada_SPARK_Compression_Embedded_Client_{VERSION}.tar.gz")
     with tarfile.open(tar_path, "w:gz") as tar:
-        tar.add(emb_folder, arcname=f"Tactical_Archive_Embedded_Client_{VERSION}")
+        tar.add(emb_folder, arcname=f"Ada_SPARK_Compression_Embedded_Client_{VERSION}")
 
     # 2. Zip oluştur (Evrensel kullanım için)
-    zip_path = os.path.join(DIST_DIR, f"Tactical_Archive_Embedded_Client_{VERSION}.zip")
+    zip_path = os.path.join(DIST_DIR, f"Ada_SPARK_Compression_Embedded_Client_{VERSION}.zip")
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for root, _, files in os.walk(emb_folder):
             for file in files:
@@ -166,7 +166,7 @@ make
 
 def main():
     print("==========================================================================")
-    print("  TACTICAL ARCHIVE - SÜRÜM ÜRETİM ROBOTU (RELEASE BUILDER)                ")
+    print("  ADA SPARK SIKIŞTIRMA SÜİTİ - SÜRÜM ÜRETİM ROBOTU (RELEASE BUILDER)      ")
     print(f"  Hedef Sürüm Etiketi: {VERSION}                                         ")
     print("==========================================================================")
 

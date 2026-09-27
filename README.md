@@ -1,25 +1,27 @@
-# ⚡ Tactical Archive Studio (.tact)
-### STANAG-4586 & DO-178C Level-A Uyumlu Askeri Aviyonik Veri Sıkıştırma Süiti
+# 🛡️ Ada SPARK Aviyonik Veri Sıkıştırma Süiti
+### Ada SPARK Avionics Compression Studio (.tact)
+**STANAG-4586 & DO-178C Level-A Uyumlu Emniyet-Kritik Aviyonik Veri Sıkıştırma ve Telemetri Ağ Akış Platformu**
 
 [![Release: v1.0.0](https://img.shields.io/badge/Release-v1.0.0-blue.svg)](dist/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](LICENSE)
-[![Standard: STANAG--4586](https://img.shields.io/badge/Standard-STANAG--4586_Rev.3-blueviolet.svg)](#)
+[![Core: Ada SPARK 2014](https://img.shields.io/badge/Core-Ada_SPARK_2014-darkblue.svg)](#)
 [![Safety: DO--178C_Level--A](https://img.shields.io/badge/Safety-DO--178C_Level--A_Certified-cyan.svg)](#)
+[![Standard: STANAG--4586](https://img.shields.io/badge/Standard-STANAG--4586_Rev.3-blueviolet.svg)](#)
 [![Integrity: IEEE_802.3_CRC32](https://img.shields.io/badge/Integrity-IEEE_802.3_CRC32-brightgreen.svg)](#)
 [![Architecture: Client--Server](https://img.shields.io/badge/Architecture-Client--Server_Dual_Platform-orange.svg)](#)
-[![Language: C99_SPARK_Python](https://img.shields.io/badge/Core-ANSI_C99_%7C_Ada_SPARK_%7C_Python3-darkblue.svg)](#)
+[![Hardware: C99 Zero--Heap](https://img.shields.io/badge/Embedded-ANSI_C99_Zero--Heap-success.svg)](#)
 
 ---
 
 ## 📸 Aviyonik Sistem Mimarisi ve Veri Boru Hattı
 
-![Tactical Avionics Compression Pipeline](docs/images/tactical_avionics_pipeline.jpg)
+![Ada SPARK Aviyonik Sıkıştırma Boru Hattı](docs/images/tactical_avionics_pipeline.jpg)
 
 ---
 
 ## 📌 Proje Genel Bakış (Overview)
 
-**Tactical Archive Studio**, taktik insansız hava araçları (İHA/SİHA), uçuş kontrol görev bilgisayarları (FCC), sensör podları ve yer kontrol istasyonları (GCS) için geliştirilmiş **yüksek performanslı, deterministik, kayıpsız (lossless) ve emniyet kritik** bir arşivleme, sıkıştırma ve ağ akış konteyneridir (`.tact`).
+**Ada SPARK Aviyonik Veri Sıkıştırma Süiti (Ada SPARK Avionics Compression Studio)**, taktik insansız hava araçları (İHA/SİHA), uçuş kontrol görev bilgisayarları (FCC), sensör podları, haberleşme datalinkleri ve yer kontrol istasyonları (GCS) için geliştirilmiş **yüksek performanslı, deterministik, kayıpsız (lossless) ve emniyet kritik** bir veri sıkıştırma, telemetri arşivleme ve ağ akış platformudur (`.tact`).
 
 ### ❓ Geleneksel Arşivleyiciler (ZIP, RAR, 7z) Havacılıkta Neden Yetersizdir?
 1. **Dinamik Bellek Taşması (OOM):** Standart ZIP ve RAR motorları yüz binlerce küçük dosya veya derin bağımlılık ağaçlarında RAM tüketimini kontrol edemez ve bellek sızıntısına yol açar.
@@ -27,7 +29,7 @@
 3. **Canlı Akış (Streaming) Desteğinin Olmaması:** ZIP/RAR yalnızca dosya bazlı çalışır; telsizden veya UDP ağ soketinden akan paketleri milisaniyelik gecikmeyle sıkıştırıp açamaz.
 4. **DO-178C Sertifikasyon Uyumsuzluğu:** Dinamik bellek tahsisi (`malloc`) kullandıkları için havacılıkta Seviye-A emniyet kriterlerini karşılayamazlar.
 
-**Tactical Archive Studio**, bu kısıtları ortadan kaldırarak **Kolmogorov Karmaşıklığı (EML Sheffer Operatörü)**, **Google TurboQuant (FWHT + QJL)** ve **STANAG 3-Kademeli Delta Stride** boru hatlarıyla **11.6:1** ve **64:1** oranlarına kadar deterministik sıkıştırma sağlar.
+**Ada SPARK Aviyonik Sıkıştırma Süiti**, bu kısıtları ortadan kaldırarak **Ada SPARK 2014 Formal Kanıt Çekirdeği**, **Kolmogorov Karmaşıklığı (EML Sheffer Operatörü)**, **Google TurboQuant (FWHT + QJL)** ve **STANAG 3-Kademeli Delta Stride** boru hatlarıyla **11.6:1** ve **64:1** oranlarına kadar deterministik ve emniyetli sıkıştırma sağlar.
 
 ---
 
@@ -118,18 +120,18 @@ flowchart LR
     subgraph HAVA_PLATFORMU [📡 HAVA PLATFORMU / İSTEMCİ (CLIENT)]
         direction TB
         Sensors["📡 Radar / Telemetri / Sensör Podu (Ham Veri)"] --> LocalStream["Yerel Akış (Port 5555)"]
-        LocalStream --> EmbClient["⚡ Tactical Embedded Client (Gömülü Ajan)"]
-        EmbClient -->|"Algoritma 8: Omni / Algoritma 6: TurboQuant (11.6:1 Sıkıştırma)"| CompPackets["🗜️ Sıkıştırılmış Taktik Paketler"]
+        LocalStream --> EmbClient["⚡ Ada SPARK Embedded Client (Gömülü Ajan)"]
+        EmbClient -->|"Algoritma 8: Omni / Algoritma 6: TurboQuant (11.6:1 Sıkıştırma)"| CompPackets["🗜️ Sıkıştırılmış Aviyonik Paketler"]
         CompPackets --> DatalinkTX["📻 Telsiz / Datalink Vericisi (TX)"]
     end
 
-    DatalinkTX -->|"Hava-Yer Taktik Veri Bağı (STANAG-4586)"| DatalinkRX["📻 Yer İstasyonu Alıcısı (RX)"]
+    DatalinkTX -->|"Hava-Yer Aviyonik Veri Bağı (STANAG-4586)"| DatalinkRX["📻 Yer İstasyonu Alıcısı (RX)"]
 
     subgraph YER_KONTROL_MERKEZI [🖥️ YER İSTASYONU / SUNUCU (SERVER)]
         direction TB
-        DatalinkRX --> NetServer["📡 Tactical Ground Station Server (Sunucu)"]
+        DatalinkRX --> NetServer["📡 Ada SPARK Ground Station Server (Sunucu)"]
         NetServer -->|"IEEE 802.3 CRC-32 Doğrulama + Bit-Exact Geri Çatım"| Decoded["📂 Kayıpsız Orijinal Telemetri"]
-        Decoded --> CockpitUI["🖥️ Tactical Studio PRO GUI (Beyaz Tema Kokpit)"]
+        Decoded --> CockpitUI["🖥️ Ada SPARK Studio PRO GUI (Beyaz Kokpit)"]
         Decoded --> ArchiveTact["💾 .tact Arşiv Dosyası & MFD Ekranı"]
     end
 ```
@@ -138,7 +140,7 @@ flowchart LR
 
 ## 🚀 Gerçek Performans ve Başarım Tablosu (Benchmarks)
 
-| Veri Tipi / Senaryo | Ham Boyut | WinRAR 7.13 (Maksimum) | Tactical Archive (`.tact`) | Kazanç / Doğrulama Durumu |
+| Veri Tipi / Senaryo | Ham Boyut | WinRAR 7.13 (Maksimum) | Ada SPARK Sıkıştırma (`.tact`) | Kazanç / Doğrulama Durumu |
 | :--- | :--- | :--- | :--- | :--- |
 | **Büyük Ölçekli Klasör (254,240 Öğe)** | **3,168 MB (3.02 GB)** | ~690 MB (%77) | **613.72 MB (%79.69)** | **~5:1 Oran (RAM Taşması Sıfır)** |
 | **Havacılık Hata Günlüğü (Log)** | **106 KB (108,544 B)** | 4.2 KB (%96.1) | **772 Bayt (%99.25)** | **138:1 Oran (Tekil Kolmogorov Modeli)** |
@@ -155,9 +157,9 @@ Sistem iki ayrı resmi dağıtım paketi olarak derlenmiştir:
 
 | Paket Adı | Boyut | Hedef Donanım / Ortam | İçerik |
 | :--- | :--- | :--- | :--- |
-| **`Tactical_Archive_PC_Server_v1.0.0.zip`** | **2.32 MB** | Windows / Linux Yer İstasyonları, PC | PRO Beyaz GUI (`app.py`), Headless Server (`tactical_server.py`), CLI, SPARK ikilileri, Batch başlatıcılar |
-| **`Tactical_Archive_Embedded_Client_v1.0.0.tar.gz`** | **9.3 KB** | Raspberry Pi, Nvidia Jetson, NXP, Linux SBC | Python Ajanı (`tactical_client.py`), Saf C99 Çekirdeği (`tactical_embedded_core.c`), Makefile, Systemd Servisi |
-| **`Tactical_Archive_Embedded_Client_v1.0.0.zip`** | **14.5 KB** | Evrensel Gömülü Kullanım, STM32 | Saf C99 ve Python istemci dosyalarının evrensel zip arşivi |
+| **`Ada_SPARK_Compression_PC_Server_v1.0.0.zip`** | **3.55 MB** | Windows / Linux Yer İstasyonları, PC | PRO Beyaz GUI (`app.py`), Headless Server (`tactical_server.py`), CLI, SPARK ikilileri, Batch başlatıcılar |
+| **`Ada_SPARK_Compression_Embedded_Client_v1.0.0.tar.gz`** | **9.3 KB** | Raspberry Pi, Nvidia Jetson, NXP, Linux SBC | Python Ajanı (`tactical_client.py`), Saf C99 Çekirdeği (`tactical_embedded_core.c`), Makefile, Systemd Servisi |
+| **`Ada_SPARK_Compression_Embedded_Client_v1.0.0.zip`** | **14.6 KB** | Evrensel Gömülü Kullanım, STM32 | Saf C99 ve Python istemci dosyalarının evrensel zip arşivi |
 
 > Kriptografik doğrulama için her paketin SHA-256 hash imzaları `dist/SHA256SUMS.txt` dosyasında yer almaktadır.
 
@@ -169,8 +171,8 @@ Sistem iki ayrı resmi dağıtım paketi olarak derlenmiştir:
 
 ```bash
 # Depoyu klonlayın
-git clone https://github.com/muhammetatmaca/tactical-archive.git
-cd tactical-archive
+git clone https://github.com/muhammetatmaca/ada-spark-compression.git
+cd ada-spark-compression
 
 # Bağımlılıkları yükleyin
 pip install -r requirements.txt
@@ -196,11 +198,11 @@ pip install -r requirements.txt
 
 ### 2. Gömülü Cihaz (İstemci) Kurulumu (Raspberry Pi / Jetson / Linux)
 
-Gömülü cihaza `Tactical_Archive_Embedded_Client_v1.0.0.tar.gz` paketini aktarıp çalıştırın:
+Gömülü cihaza `Ada_SPARK_Compression_Embedded_Client_v1.0.0.tar.gz` paketini aktarıp çalıştırın:
 
 ```bash
-tar -xvf Tactical_Archive_Embedded_Client_v1.0.0.tar.gz
-cd Tactical_Archive_Embedded_Client_v1.0.0
+tar -xvf Ada_SPARK_Compression_Embedded_Client_v1.0.0.tar.gz
+cd Ada_SPARK_Compression_Embedded_Client_v1.0.0
 chmod +x install.sh
 sudo ./install.sh
 ```

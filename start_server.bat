@@ -1,8 +1,8 @@
 @echo off
-title Tactical Archive - Ground Station Server
+title Ada SPARK Sikistirma - Ground Station Server
 color 0A
 echo =========================================================================
-echo   TACTICAL ARCHIVE - ENTERPRISE GROUND STATION SERVER (STANAG-4586)
+echo   ADA SPARK SIKISTIRMA - ENTERPRISE GROUND STATION SERVER (STANAG-4586)
 echo =========================================================================
 echo.
 echo [*] Bagimliliklar kontrol ediliyor...

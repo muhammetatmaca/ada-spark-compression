@@ -1,7 +1,7 @@
-# 📡 Tactical Embedded Agent (Gömülü Sistem Kiti)
+# 📡 Ada SPARK Embedded Agent (Gömülü Sistem Kiti)
 ### STANAG-4586 & DO-178C Level-A Uyumlu Aviyonik Donanım İstemcisi
 
-Bu paket; **İHA/SİHA uçuş bilgisayarları (FCC), sensör podları, Raspberry Pi, Nvidia Jetson, NXP i.MX, BeagleBone, STM32 ve mikrodenetleyiciler** gibi gömülü sistemlerin **Tactical Archive Studio** ile doğrudan ve canlı konuşabilmesi için hazırlanmış bağımsız bir istemcidir.
+Bu paket; **İHA/SİHA uçuş bilgisayarları (FCC), sensör podları, Raspberry Pi, Nvidia Jetson, NXP i.MX, BeagleBone, STM32 ve mikrodenetleyiciler** gibi gömülü sistemlerin **Ada SPARK Aviyonik Sıkıştırma Süiti** ile doğrudan ve canlı konuşabilmesi için hazırlanmış bağımsız bir istemcidir.
 
 ---
 
@@ -9,8 +9,8 @@ Bu paket; **İHA/SİHA uçuş bilgisayarları (FCC), sensör podları, Raspberry
 
 1. **Uçak / Verici Modu (TX Mode):**
    - Gömülü sistemdeki sensörden veya seri porttan ham telemetri verisini okur.
-   - Seçilen taktiksel algoritma ile yerinde sıkıştırır (örn. 256 Bayt $\to$ 22 Bayt, **%92.2 bant genişliği tasarrufu**).
-   - Telsiz / Datalink üzerinden yer kontrol istasyonunda çalışan Tactical Archive Studio'ya UDP ile fırlatır.
+   - Seçilen aviyonik algoritma ile yerinde sıkıştırır (örn. 256 Bayt $\to$ 22 Bayt, **%92.2 bant genişliği tasarrufu**).
+   - Telsiz / Datalink üzerinden yer kontrol istasyonunda çalışan Ada SPARK Studio'ya UDP ile iletir.
 
 2. **Yer İstasyonu / Alıcı Modu (RX Mode):**
    - Havadan gelen sıkıştırılmış UDP paketlerini karşılar.

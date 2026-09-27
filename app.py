@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-TACTICAL ARCHIVE STUDIO - ENTERPRISE AVIONICS SUITE
-STANAG-4586 & DO-178C Level-A Uyumlu Taktiksel Veri Sıkıştırma Süiti
+ADA SPARK SIKIŞTIRMA STÜDYOSU - AVİYONİK VERİ SIKIŞTIRMA SÜİTİ
+(Ada SPARK Avionics Compression Studio)
+STANAG-4586 & DO-178C Level-A Uyumlu Havacılık ve Savunma Veri Sıkıştırma Platformu
 
 Geliştirici: Muhammet Atmaca
 Masaüstü Grafik Arayüzü (Profesyonel Beyaz Aviyonik Tema, Açık Çoklu Algoritma Seçimi, Sıfır Dump)
@@ -111,7 +112,7 @@ def get_algo_short_name(algo_id):
 class TacticalArchiveApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Tactical Archive Studio | STANAG-4586 & DO-178C Suite")
+        self.root.title("Ada SPARK Aviyonik Sıkıştırma Süiti | DO-178C Level-A & STANAG-4586")
         self.root.geometry("1160x750")
         self.root.minsize(1040, 680)
         self.root.configure(bg=CLR_BG)
@@ -188,15 +189,15 @@ class TacticalArchiveApp:
         title_box = tk.Frame(header, bg=CLR_CARD)
         title_box.pack(side="left", padx=20, pady=10)
 
-        lbl_logo = tk.Label(title_box, text="⚡ TACTICAL ARCHIVE STUDIO", font=(FONT_FAMILY, 15, "bold"), fg=CLR_TEXT, bg=CLR_CARD)
+        lbl_logo = tk.Label(title_box, text="🛡️ ADA SPARK SIKIŞTIRMA STÜDYOSU", font=(FONT_FAMILY, 15, "bold"), fg=CLR_TEXT, bg=CLR_CARD)
         lbl_logo.pack(anchor="w")
 
-        lbl_desc = tk.Label(title_box, text="STANAG-4586 & DO-178C Level-A Askeri Aviyonik Veri Sıkıştırma Süiti (.tact)", font=(FONT_FAMILY, 9), fg=CLR_MUTED, bg=CLR_CARD)
+        lbl_desc = tk.Label(title_box, text="Ada SPARK 2014 & DO-178C Level-A Aviyonik Veri Sıkıştırma Süiti (.tact)", font=(FONT_FAMILY, 9), fg=CLR_MUTED, bg=CLR_CARD)
         lbl_desc.pack(anchor="w")
 
         badge = tk.Label(
             header,
-            text="● MISSION READY | DO-178C LEVEL-A",
+            text="● ADA SPARK 2014 | DO-178C LEVEL-A",
             font=(FONT_FAMILY, 9, "bold"),
             fg=CLR_EMERALD,
             bg=CLR_EMERALD_BG,
@@ -802,13 +803,13 @@ class TacticalArchiveApp:
             self.ent_out.insert(0, out_name)
 
     def browse_out_tact(self):
-        f = filedialog.asksaveasfilename(title="Çıktı Arşivini Belirleyin", defaultextension=".tact", filetypes=[("Tactical Archive", "*.tact")])
+        f = filedialog.asksaveasfilename(title="Çıktı Arşivini Belirleyin", defaultextension=".tact", filetypes=[("Ada SPARK Arşivi (*.tact)", "*.tact")])
         if f:
             self.ent_out.delete(0, tk.END)
             self.ent_out.insert(0, os.path.normpath(f))
 
     def browse_ext_tact(self):
-        f = filedialog.askopenfilename(title="Açılacak .tact Arşivini Seçin", filetypes=[("Tactical Archive", "*.tact"), ("Tüm Dosyalar", "*.*")])
+        f = filedialog.askopenfilename(title="Açılacak .tact Arşivini Seçin", filetypes=[("Ada SPARK Arşivi (*.tact)", "*.tact"), ("Tüm Dosyalar", "*.*")])
         if f:
             self.ent_ext_src.delete(0, tk.END)
             self.ent_ext_src.insert(0, os.path.normpath(f))

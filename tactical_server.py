@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-TACTICAL ARCHIVE - ENTERPRISE GROUND STATION SERVER (SUNUCU)
-STANAG-4586 & DO-178C Level-A Uyumlu Aviyonik Veri Sunucusu
+ADA SPARK SIKIŞTIRMA - GROUND STATION SERVER (SUNUCU)
+STANAG-4586 & DO-178C Level-A Uyumlu Ada SPARK Aviyonik Veri Sunucusu
 
 İşlev:
 - Gömülü platformlardan (İHA, SİHA, Sensör Podu, Jetson, Raspberry Pi, STM32)
   gelen sıkıştırılmış aviyonik veri akışlarını eşzamanlı dinler.
-- Her paketi belirlenen taktik algoritma ile anlık çözer (Decompression).
+- Her paketi belirlenen aviyonik algoritma ile anlık çözer (Decompression).
 - IEEE 802.3 CRC-32 bütünlüğünü denetler.
 - Telemetriyi kokpit/harita yazılımlarına iletir veya .tact arşivine kaydeder.
 - GUI olmadan doğrudan sunucularda veya arka plan servisi olarak çalıştırılabilir.
@@ -46,7 +46,7 @@ class TacticalGroundStationServer:
 
     def start(self):
         print("==========================================================================")
-        print("  TACTICAL ARCHIVE - ENTERPRISE GROUND STATION SERVER (SUNUCU)             ")
+        print("  ADA SPARK SIKIŞTIRMA - GROUND STATION SERVER (SUNUCU)                   ")
         print("  STANAG-4586 & DO-178C LEVEL-A AVİYONİK ÇOK KANALLI AKIŞ PLATFORMU       ")
         print("==========================================================================")
 

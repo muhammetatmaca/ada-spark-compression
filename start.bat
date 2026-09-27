@@ -1,8 +1,8 @@
 @echo off
-title Tactical Archive Studio - Avionics Edition
+title Ada SPARK Sikistirma Studyosu - DO-178C Level-A
 color 0B
 echo =========================================================================
-echo   TACTICAL ARCHIVE STUDIO - STANAG-4586 / DO-178C LEVEL-A ENGINE
+echo   ADA SPARK SIKISTIRMA STUDYOSU - STANAG-4586 / DO-178C LEVEL-A
 echo =========================================================================
 echo.
 
