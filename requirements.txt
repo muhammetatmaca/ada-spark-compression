@@ -1,0 +1,3 @@
+# Tactical Archive Studio - Requirements
+zstandard>=0.22.0
+pyyaml>=6.0

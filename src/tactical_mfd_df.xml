@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ===================================================================== -->
+<!--  STANAG-MIL / ARINC 661 TACTICAL MFD COCKPIT DISPLAY DEFINITION FILE  -->
+<!--  Compliant with ARINC 661 Supplement 6 / SCADE Display / VAPS XT      -->
+<!-- ===================================================================== -->
+<A661_DF xmlns="http://www.arinc661.org/schema"
+         name="TACTICAL_MFD_COCKPIT"
+         appID="101"
+         version="1.0">
+
+  <!-- =================================================================== -->
+  <!-- LAYER 1: STANAG STATUS & SYSTEM ANNUCIATORS                         -->
+  <!-- =================================================================== -->
+  <A661_LAYER id="1" name="STATUS_BAR_LAYER" width="1024" height="120">
+    <!-- MFD Header Title -->
+    <A661_LABEL id="1001" name="lbl_system_title"
+                x="20" y="20" width="400" height="40"
+                string="STANAG-MIL TACTICAL ARCHIVE ENGINE"
+                color="Green" font="Aviation_Large" />
+
+    <!-- STANAG Archive Magic & Version -->
+    <A661_LABEL id="1002" name="lbl_stanag_magic"
+                x="20" y="70" width="250" height="30"
+                string="MAGIC: TACT | VER: 1.0"
+                color="Cyan" font="Aviation_Medium" />
+
+    <!-- IEEE 802.3 CRC-32 Integrity LED Annunciator -->
+    <A661_LABEL id="1003" name="lbl_crc_status"
+                x="750" y="25" width="240" height="35"
+                string="CRC-32: VERIFIED [OK]"
+                color="Green" font="Aviation_Medium" />
+
+    <!-- Memory Sanitization Status -->
+    <A661_LABEL id="1004" name="lbl_scrub_status"
+                x="750" y="70" width="240" height="30"
+                string="RAM ZEROIZE: ARMED"
+                color="Amber" font="Aviation_Small" />
+  </A661_LAYER>
+
+  <!-- =================================================================== -->
+  <!-- LAYER 2: COMPRESSION METRICS & BANDWIDTH SAVINGS GAUGES             -->
+  <!-- =================================================================== -->
+  <A661_LAYER id="2" name="METRICS_GAUGES_LAYER" width="1024" height="400">
+    <!-- Active Algorithm Indicator -->
+    <A661_LABEL id="2001" name="lbl_active_algo"
+                x="30" y="140" width="500" height="35"
+                string="ALGORITHM 8: MASTER OMNI-SYNTHESIS"
+                color="Yellow" font="Aviation_Large" />
+
+    <!-- Raw Telemetry Size -->
+    <A661_NUMERIC_READOUT id="2002" name="num_raw_bytes"
+                          x="30" y="190" width="220" height="45"
+                          label="RAW PAYLOAD (B):"
+                          value="256" format="%d" color="White" />
+
+    <!-- Compressed Stream Size -->
+    <A661_NUMERIC_READOUT id="2003" name="num_comp_bytes"
+                          x="280" y="190" width="220" height="45"
+                          label="COMPRESSED (B):"
+                          value="145" format="%d" color="Green" />
+
+    <!-- Compression Ratio Readout -->
+    <A661_NUMERIC_READOUT id="2004" name="num_comp_ratio"
+                          x="530" y="190" width="220" height="45"
+                          label="COMP RATIO (X:1):"
+                          value="1.77" format="%.2f" color="Green" />
+
+    <!-- Bandwidth Savings Progress Bar -->
+    <A661_PROGRESS_BAR id="2005" name="bar_bandwidth_saved"
+                       x="30" y="260" width="720" height="35"
+                       minValue="0" maxValue="100" value="44"
+                       color="Green" title="BANDWIDTH SAVED (%)" />
+
+    <!-- TurboQuant Direct Dot-Product Accuracy -->
+    <A661_NUMERIC_READOUT id="2006" name="num_turbo_accuracy"
+                          x="30" y="320" width="350" height="45"
+                          label="TURBOQUANT RADAR ACCURACY (%):"
+                          value="92.98" format="%.2f" color="Cyan" />
+
+    <!-- Laya Decision Bottleneck Parameter Status -->
+    <A661_LABEL id="2007" name="lbl_laya_bottleneck"
+                x="410" y="325" width="340" height="40"
+                string="LAYA DECISION BOTTLENECK: 28 BYTES"
+                color="Amber" font="Aviation_Medium" />
+  </A661_LAYER>
+
+  <!-- =================================================================== -->
+  <!-- LAYER 3: COCKPIT BEZEL KEYS (ALGORITHM & CONTROL SELECTION)         -->
+  <!-- =================================================================== -->
+  <A661_LAYER id="3" name="BEZEL_BUTTONS_LAYER" width="1024" height="240">
+    <!-- Algorithm 1: LZSS -->
+    <A661_PUSH_BUTTON id="3001" name="btn_algo_lzss"
+                      x="780" y="140" width="220" height="40"
+                      label="1: LZSS DICT" color="DarkGray" />
+
+    <!-- Algorithm 3: 2-Stage LZSS + rANS -->
+    <A661_PUSH_BUTTON id="3002" name="btn_algo_two_stage"
+                      x="780" y="190" width="220" height="40"
+                      label="3: 2-STAGE rANS" color="DarkGray" />
+
+    <!-- Algorithm 4: 3-Stage Delta + LZSS + rANS -->
+    <A661_PUSH_BUTTON id="3003" name="btn_algo_three_stage"
+                      x="780" y="240" width="220" height="40"
+                      label="4: 3-STAGE DELTA" color="DarkGray" />
+
+    <!-- Algorithm 5: EML Kolmogorov Continuous Sheffer -->
+    <A661_PUSH_BUTTON id="3004" name="btn_algo_eml"
+                      x="780" y="290" width="220" height="40"
+                      label="5: EML SHEFFER 64:1" color="DarkGray" />
+
+    <!-- Algorithm 6: Google TurboQuant Radar VQ -->
+    <A661_PUSH_BUTTON id="3005" name="btn_algo_turboquant"
+                      x="780" y="340" width="220" height="40"
+                      label="6: TURBOQUANT 8:1" color="DarkGray" />
+
+    <!-- Algorithm 7: Laya Non-Autoregressive System 1 -->
+    <A661_PUSH_BUTTON id="3006" name="btn_algo_laya"
+                      x="780" y="390" width="220" height="40"
+                      label="7: LAYA SYSTEM-1" color="DarkGray" />
+
+    <!-- Algorithm 8: Master Omni-Synthesis -->
+    <A661_PUSH_BUTTON id="3007" name="btn_algo_omni"
+                      x="780" y="440" width="220" height="40"
+                      label="8: MASTER OMNI" color="Green" />
+
+    <!-- Emergency RAM Sanitization Bezel Button -->
+    <A661_PUSH_BUTTON id="3008" name="btn_emergency_zeroize"
+                      x="780" y="500" width="220" height="45"
+                      label="ZEROIZE RAM [SECURE]" color="Red" />
+  </A661_LAYER>
+</A661_DF>
