@@ -4,7 +4,7 @@ TACTICAL ARCHIVE STUDIO - ENTERPRISE AVIONICS SUITE
 STANAG-4586 & DO-178C Level-A Uyumlu Taktiksel Veri Sıkıştırma Süiti
 
 Geliştirici: Muhammet Atmaca
-Masaüstü Grafik Arayüzü (Temiz Görsel Paneller, Açık Algoritma Seçimi, Sıfır Dump)
+Masaüstü Grafik Arayüzü (Temiz Görsel Paneller, Açık Çoklu Algoritma Seçimi, Sıfır Simülasyon, Sıfır Dump)
 """
 
 import os
@@ -21,7 +21,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS_DIR = os.path.join(BASE_DIR, "scripts")
 sys.path.append(SCRIPTS_DIR)
 
-from avionics_stream_engine import RealSocketListener
+from avionics_stream_engine import MultiRealSocketManager, compress_payload_with_algo
 from tactical_semantic_engine import compress_semantic_folder, extract_semantic_folder
 
 SPARK_EXE = os.path.join(BASE_DIR, "bin", "tactical_archive.exe")
@@ -45,20 +45,8 @@ FONT_MONO      = "Consolas"
 
 MAGIC_UNIVERSAL = b"TACT-UNIVERSAL-V3\n"
 
-# Algoritma Listesi ve Açıklamaları
+# Havacılık ve Taktik Algoritmalar Listesi
 ALGORITHMS = [
-    {
-        "id": "universal",
-        "name": "Evrensel Taktik Akış Motoru (Streaming Zstandard Level-19)",
-        "badge": "GENEL KLASÖR & KOD PROJELERİ (%80)",
-        "desc": "Tüm alt klasörleri (node_modules, .git dahil) çok çekirdekli paralel akışla sıkıştırır."
-    },
-    {
-        "id": "semantic",
-        "name": "Kolmogorov Semantik Sentez (Log & Şema Modelleme)",
-        "badge": "HATA LOGLARI & KÖK PROJE (< 20 KB)",
-        "desc": "106 KB'lık hata logunu 1 tekil şablona indirger (772 bayt) ve paket çözünürlük indeksi uygular."
-    },
     {
         "id": "algo-8",
         "name": "Algoritma 8: Master Omni-Synthesis (Tümleşik Boru Hattı)",
@@ -80,7 +68,7 @@ ALGORITHMS = [
     {
         "id": "algo-4",
         "name": "Algoritma 4: STANAG 3-Kademeli Hibrit (Delta + LZSS + rANS)",
-        "badge": "MIL-STD-1553B TELEMETRİ (9:1)",
+        "badge": "MIL-STD-1553B TELEMETRİ (9.1:1)",
         "desc": "Zaman serisi telemetride varyansı sıfırlar, kayan pencereli sözlük ve asimetrik sayısal sistem entropisi uygular."
     },
     {
@@ -88,8 +76,29 @@ ALGORITHMS = [
         "name": "Algoritma 7: Laya Non-Autoregressive Core",
         "badge": "GÖREV BİLGİSAYARI KARARLARI (3.1:1)",
         "desc": "Ayrık karar alanlarını 28-baytlık tipli karar darboğazına hapsederek durum loglarını sıkıştırır."
+    },
+    {
+        "id": "universal",
+        "name": "Evrensel Taktik Akış Motoru (Streaming Zstandard Level-19)",
+        "badge": "GENEL KLASÖR & KOD PROJELERİ (%80)",
+        "desc": "Tüm alt klasörleri (node_modules, .git dahil) çok çekirdekli paralel akışla sıkıştırır."
+    },
+    {
+        "id": "semantic",
+        "name": "Kolmogorov Semantik Sentez (Log & Şema Modelleme)",
+        "badge": "HATA LOGLARI & KÖK PROJE (< 20 KB)",
+        "desc": "106 KB'lık hata logunu 1 tekil şablona indirger (772 bayt) ve paket çözünürlük indeksi uygular."
     }
 ]
+
+def get_algo_short_name(algo_id):
+    for a in ALGORITHMS:
+        if a["id"] == algo_id or algo_id in a["id"]:
+            parts = a["name"].split(":")
+            if len(parts) >= 2:
+                return parts[0].strip() + ": " + parts[1].split("(")[0].strip()
+            return a["name"]
+    return algo_id
 
 # ==========================================
 # ANA GRAFİK ARAYÜZ (GUI)
@@ -98,13 +107,15 @@ class TacticalArchiveApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Tactical Archive Studio | STANAG-4586 & DO-178C Suite")
-        self.root.geometry("1100x720")
-        self.root.minsize(980, 640)
+        self.root.geometry("1140x740")
+        self.root.minsize(1020, 680)
         self.root.configure(bg=CLR_BG)
 
-        # Gercek Ağ Soketi Dinleyicisi (Sıfır simülasyon)
-        self.socket_listener = None
+        # Gerçek Çoklu Ağ Soketi Yöneticisi (Sıfır simülasyon)
+        self.socket_mgr = MultiRealSocketManager()
         self.is_listening = False
+        self.socket_stats = {}  # {port: meta}
+        self.configured_sockets = []  # [{"port": 5555, "ip": "0.0.0.0", "algo_id": "algo-8", "algo_name": "..."}]
 
         self.center_window()
         self.setup_styles()
@@ -112,8 +123,8 @@ class TacticalArchiveApp:
 
     def center_window(self):
         self.root.update_idletasks()
-        w = 1100
-        h = 720
+        w = 1140
+        h = 740
         x = max(0, (self.root.winfo_screenwidth() // 2) - (w // 2))
         y = max(0, (self.root.winfo_screenheight() // 2) - (h // 2))
         self.root.geometry(f"{w}x{h}+{x}+{y}")
@@ -129,6 +140,25 @@ class TacticalArchiveApp:
                   foreground=[("selected", CLR_CYAN)])
 
         style.configure("TProgressbar", thickness=8, troughcolor=CLR_CARD_ALT, background=CLR_CYAN, borderwidth=0)
+
+        # Treeview (Modern Havacılık Tablo Teması)
+        style.configure("Treeview",
+                        background=CLR_CARD,
+                        foreground=CLR_TEXT,
+                        fieldbackground=CLR_CARD,
+                        rowheight=28,
+                        font=(FONT_FAMILY, 9),
+                        borderwidth=0)
+        style.configure("Treeview.Heading",
+                        background=CLR_CARD_ALT,
+                        foreground=CLR_CYAN,
+                        font=(FONT_FAMILY, 9, "bold"),
+                        relief="flat")
+        style.map("Treeview",
+                  background=[("selected", "#1E3A8A")],
+                  foreground=[("selected", "#FFFFFF")])
+        style.map("Treeview.Heading",
+                  background=[("active", "#243247")])
 
     def build_ui(self):
         # 1. Üst Başlık Barı (Tamamen Temiz & Profesyonel)
@@ -162,9 +192,9 @@ class TacticalArchiveApp:
         self.notebook.add(self.tab_extract, text="  📂 GERİ AÇ (Çıkart)  ")
         self.build_extract_tab()
 
-        # Tab 3: GERÇEK AĞ PORTU DİNLEYİCİSİ (UDP SOCKET)
+        # Tab 3: GERÇEK ÇOKLU AĞ SOKETİ DİNLEYİCİSİ (UDP PORT)
         self.tab_socket = tk.Frame(self.notebook, bg=CLR_BG)
-        self.notebook.add(self.tab_socket, text="  📡 CANLI AĞ SOKETİ (UDP)  ")
+        self.notebook.add(self.tab_socket, text="  📡 CANLI AĞ SOKETLERİ (Çoklu UDP)  ")
         self.build_socket_tab()
 
         # Tab 4: DO-178C LEVEL-A SPARK DOĞRULAMA
@@ -337,90 +367,305 @@ class TacticalArchiveApp:
         self.lbl_ext_prog.pack(anchor="w", padx=6)
 
     # -------------------------------------------------------------
-    # TAB 3: GERÇEK AĞ SOKETİ DİNLEYİCİSİ (UDP PORT)
+    # TAB 3: GERÇEK ÇOKLU AĞ SOKETİ DİNLEYİCİSİ (UDP PORTLARI + BAĞIMSIZ ALGORİTMALAR)
     # -------------------------------------------------------------
     def build_socket_tab(self):
         panel = tk.Frame(self.tab_socket, bg=CLR_BG)
         panel.pack(fill="both", expand=True, padx=8, pady=8)
 
-        card_cfg = tk.Frame(panel, bg=CLR_CARD, bd=1, relief="solid", highlightbackground=CLR_BORDER, highlightthickness=1, padx=16, pady=14)
-        card_cfg.pack(fill="x", pady=6, padx=4)
+        # 1. SOKET YAPILANDIRMA VE ALGORİTMA ATAMA KARTI
+        card_cfg = tk.Frame(panel, bg=CLR_CARD, bd=1, relief="solid", highlightbackground=CLR_BORDER, highlightthickness=1, padx=16, pady=12)
+        card_cfg.pack(fill="x", pady=4, padx=4)
 
-        tk.Label(card_cfg, text="GERÇEK UDP AVİYONİK SOKETİ BAĞLANTISI (SIFIR SİMÜLASYON)", font=(FONT_FAMILY, 10, "bold"), fg=CLR_CYAN, bg=CLR_CARD).pack(anchor="w")
-        tk.Label(card_cfg, text="Dışarıdan gelen gerçek uçuş telemetrisi veya radar paketlerini dinler ve canlı sıkıştırır.", font=(FONT_FAMILY, 9), fg=CLR_MUTED, bg=CLR_CARD).pack(anchor="w", pady=(2, 10))
+        tk.Label(card_cfg, text="ÇOK KANALLI GERÇEK UDP SOKET DİNLEYİCİSİ (SIFIR SİMÜLASYON)", font=(FONT_FAMILY, 10, "bold"), fg=CLR_CYAN, bg=CLR_CARD).pack(anchor="w")
+        tk.Label(card_cfg, text="Her UDP portuna bağımsız bir sıkıştırma algoritması atayın. Dış sistemden gelen gerçek paketler anlık işlenir.", font=(FONT_FAMILY, 9), fg=CLR_MUTED, bg=CLR_CARD).pack(anchor="w", pady=(1, 8))
 
-        row_net = tk.Frame(card_cfg, bg=CLR_CARD)
-        row_net.pack(fill="x", pady=4)
+        row_inputs = tk.Frame(card_cfg, bg=CLR_CARD)
+        row_inputs.pack(fill="x", pady=2)
 
-        tk.Label(row_net, text="Dinlenecek Arayüz:", font=(FONT_FAMILY, 9, "bold"), fg=CLR_MUTED, bg=CLR_CARD).pack(side="left")
-        self.ent_bind_ip = tk.Entry(row_net, font=(FONT_MONO, 9), width=14, bg="#0B0F17", fg=CLR_TEXT, bd=1, relief="solid")
-        self.ent_bind_ip.insert(0, "0.0.0.0")
-        self.ent_bind_ip.pack(side="left", padx=8)
+        # IP
+        tk.Label(row_inputs, text="Arayüz (IP):", font=(FONT_FAMILY, 9, "bold"), fg=CLR_MUTED, bg=CLR_CARD).pack(side="left")
+        self.ent_sock_ip = tk.Entry(row_inputs, font=(FONT_MONO, 9), width=12, bg="#0B0F17", fg=CLR_TEXT, bd=1, relief="solid")
+        self.ent_sock_ip.insert(0, "0.0.0.0")
+        self.ent_sock_ip.pack(side="left", padx=(4, 10))
 
-        tk.Label(row_net, text="Port:", font=(FONT_FAMILY, 9, "bold"), fg=CLR_MUTED, bg=CLR_CARD).pack(side="left", padx=(10, 4))
-        self.ent_bind_port = tk.Entry(row_net, font=(FONT_MONO, 9), width=8, bg="#0B0F17", fg=CLR_TEXT, bd=1, relief="solid")
-        self.ent_bind_port.insert(0, "5555")
-        self.ent_bind_port.pack(side="left")
+        # Port
+        tk.Label(row_inputs, text="Port:", font=(FONT_FAMILY, 9, "bold"), fg=CLR_MUTED, bg=CLR_CARD).pack(side="left")
+        self.ent_sock_port = tk.Entry(row_inputs, font=(FONT_MONO, 9), width=7, bg="#0B0F17", fg=CLR_TEXT, bd=1, relief="solid")
+        self.ent_sock_port.insert(0, "5558")
+        self.ent_sock_port.pack(side="left", padx=(4, 10))
 
-        # Buton
-        self.btn_toggle_socket = tk.Button(
-            panel,
-            text="▶ GERÇEK UDP SOKETİNİ DİNLE VE CANLI SIKIŞTIR",
-            font=(FONT_FAMILY, 10, "bold"),
-            bg=CLR_EMERALD,
+        # Algoritma Seçimi (Prominent)
+        tk.Label(row_inputs, text="Uygulanacak Algoritma:", font=(FONT_FAMILY, 9, "bold"), fg=CLR_EMERALD, bg=CLR_CARD).pack(side="left")
+        self.cmb_sock_algo = ttk.Combobox(
+            row_inputs,
+            values=[f"{a['name']} [{a['badge']}]" for a in ALGORITHMS],
+            font=(FONT_FAMILY, 9),
+            state="readonly",
+            width=46
+        )
+        self.cmb_sock_algo.current(0)
+        self.cmb_sock_algo.pack(side="left", padx=(6, 10))
+        self.cmb_sock_algo.bind("<<ComboboxSelected>>", self.on_sock_algo_selected)
+
+        # Ekle Butonu
+        btn_add = tk.Button(
+            row_inputs,
+            text="➕ Soketi Ekle",
+            font=(FONT_FAMILY, 9, "bold"),
+            bg="#0284C7",
             fg="#FFFFFF",
             bd=0,
             relief="flat",
             cursor="hand2",
-            padx=16,
-            pady=9,
-            command=self.toggle_socket_listener
+            padx=12,
+            pady=3,
+            command=self.add_socket_channel
         )
-        self.btn_toggle_socket.pack(fill="x", padx=4, pady=8)
+        btn_add.pack(side="left")
 
-        # Canlı Kartlar
+        # Seçili Algoritma Açıklama Rozeti
+        self.lbl_sock_algo_desc = tk.Label(
+            card_cfg,
+            text=f"Atanacak Algoritma: {ALGORITHMS[0]['desc']}",
+            font=(FONT_FAMILY, 8),
+            fg=CLR_MUTED,
+            bg="#0E1622",
+            padx=8,
+            pady=4,
+            relief="solid",
+            bd=1,
+            anchor="w"
+        )
+        self.lbl_sock_algo_desc.pack(fill="x", pady=(6, 0))
+
+        # 2. SOKETLER TABLOSU (TREEVIEW)
+        table_frame = tk.Frame(panel, bg=CLR_CARD, bd=1, relief="solid", highlightbackground=CLR_BORDER, highlightthickness=1)
+        table_frame.pack(fill="both", expand=True, padx=4, pady=4)
+
+        cols = ("port", "ip", "algo", "status", "packets", "kbps", "savings", "crc")
+        self.tree_sockets = ttk.Treeview(table_frame, columns=cols, show="headings", height=6)
+        
+        self.tree_sockets.heading("port", text="PORT", anchor="center")
+        self.tree_sockets.heading("ip", text="ARAYÜZ", anchor="center")
+        self.tree_sockets.heading("algo", text="ATANMIŞ ALGORİTMA", anchor="w")
+        self.tree_sockets.heading("status", text="DURUM", anchor="center")
+        self.tree_sockets.heading("packets", text="GELEN PAKET", anchor="center")
+        self.tree_sockets.heading("kbps", text="HIZ (KB/s)", anchor="center")
+        self.tree_sockets.heading("savings", text="TASARRUF (%)", anchor="center")
+        self.tree_sockets.heading("crc", text="IEEE 802.3 CRC-32", anchor="center")
+
+        self.tree_sockets.column("port", width=65, anchor="center")
+        self.tree_sockets.column("ip", width=95, anchor="center")
+        self.tree_sockets.column("algo", width=330, anchor="w")
+        self.tree_sockets.column("status", width=95, anchor="center")
+        self.tree_sockets.column("packets", width=95, anchor="center")
+        self.tree_sockets.column("kbps", width=85, anchor="center")
+        self.tree_sockets.column("savings", width=110, anchor="center")
+        self.tree_sockets.column("crc", width=120, anchor="center")
+
+        scroll_y = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree_sockets.yview)
+        self.tree_sockets.configure(yscrollcommand=scroll_y.set)
+        
+        self.tree_sockets.pack(side="left", fill="both", expand=True)
+        scroll_y.pack(side="right", fill="y")
+
+        # Tablo Altı Butonları
+        row_tbl_ctrl = tk.Frame(panel, bg=CLR_BG)
+        row_tbl_ctrl.pack(fill="x", padx=4, pady=(2, 6))
+
+        tk.Button(
+            row_tbl_ctrl,
+            text="🗑️ Seçili Soketi Listeden Kaldır",
+            font=(FONT_FAMILY, 9),
+            bg=CLR_CARD,
+            fg=CLR_ROSE,
+            bd=1,
+            relief="solid",
+            highlightbackground=CLR_BORDER,
+            cursor="hand2",
+            padx=10,
+            pady=3,
+            command=self.remove_selected_socket
+        ).pack(side="left")
+
+        # 3. TÜM SOKETLERİ BAŞLAT/DURDUR BUTONU
+        self.btn_toggle_socket = tk.Button(
+            panel,
+            text="▶ TÜM YAPILANDIRILMIŞ SOKETLERİ DİNLEMEYİ BAŞLAT",
+            font=(FONT_FAMILY, 11, "bold"),
+            bg=CLR_EMERALD,
+            fg="#FFFFFF",
+            activebackground="#059669",
+            activeforeground="#FFFFFF",
+            bd=0,
+            relief="flat",
+            cursor="hand2",
+            padx=16,
+            pady=10,
+            command=self.toggle_all_sockets
+        )
+        self.btn_toggle_socket.pack(fill="x", padx=4, pady=4)
+
+        # 4. CANLI BİRLEŞİK İSTATİSTİK KARTLARI (Sıfır Dump!)
         sock_metrics = tk.Frame(panel, bg=CLR_BG)
-        sock_metrics.pack(fill="x", pady=6)
+        sock_metrics.pack(fill="x", pady=4)
 
-        self.card_sock_p = self.create_metric_card(sock_metrics, "ALINAN GERÇEK PAKET", "0", CLR_CYAN)
-        self.card_sock_r = self.create_metric_card(sock_metrics, "GELEN HIZ", "0.0 KB/s", CLR_AMBER)
-        self.card_sock_s = self.create_metric_card(sock_metrics, "ANLIK TASARRUF", "%0.0", CLR_EMERALD)
-        self.card_sock_c = self.create_metric_card(sock_metrics, "SON CRC-32", "BEKLENİYOR", CLR_MUTED)
+        self.card_sock_total_p = self.create_metric_card(sock_metrics, "TOPLAM ALINAN PAKET", "0", CLR_CYAN)
+        self.card_sock_raw_data = self.create_metric_card(sock_metrics, "TOPLAM GELEN VERİ", "0.0 KB", CLR_AMBER)
+        self.card_sock_comp_data = self.create_metric_card(sock_metrics, "TOPLAM SIKIŞTIRILMIŞ", "0.0 KB", CLR_EMERALD)
+        self.card_sock_avg_saving = self.create_metric_card(sock_metrics, "GENEL TASARRUF", "%0.0", CLR_CYAN)
 
         # Durum Göstergesi
-        self.lbl_sock_status = tk.Label(panel, text="● Port beklemede. Dış kaynaktan UDP paketi geldiğinde canlı sıkıştırma otomatik işlenecektir.", font=(FONT_FAMILY, 9), fg=CLR_MUTED, bg=CLR_BG)
-        self.lbl_sock_status.pack(anchor="w", padx=6, pady=4)
+        self.lbl_sock_status = tk.Label(
+            panel,
+            text="● Tüm soketler beklemede. Dış kaynaktan UDP paketi geldiğinde ilgili port satırı canlı güncellenecektir.",
+            font=(FONT_FAMILY, 9),
+            fg=CLR_MUTED,
+            bg=CLR_BG
+        )
+        self.lbl_sock_status.pack(anchor="w", padx=6, pady=2)
 
-    def toggle_socket_listener(self):
+        # Varsayılan standart taktiksel portları yükle (Port 5555, 5556, 5557)
+        self._init_default_sockets()
+
+    def on_sock_algo_selected(self, event=None):
+        idx = self.cmb_sock_algo.current()
+        self.lbl_sock_algo_desc.config(text=f"Atanacak Algoritma: {ALGORITHMS[idx]['desc']}")
+
+    def _init_default_sockets(self):
+        default_configs = [
+            ("0.0.0.0", 5555, "algo-8", "Algoritma 8: Master Omni-Synthesis (11.6:1)"),
+            ("0.0.0.0", 5556, "algo-6", "Algoritma 6: Google TurboQuant (8:1 Radar)"),
+            ("0.0.0.0", 5557, "algo-4", "Algoritma 4: STANAG 3-Kademeli Hibrit (9.1:1)")
+        ]
+        for ip, port, algo_id, algo_name in default_configs:
+            self._insert_socket_row(ip, port, algo_id, algo_name)
+
+    def _insert_socket_row(self, ip, port, algo_id, algo_name):
+        iid = str(port)
+        if self.tree_sockets.exists(iid):
+            return
+        status = "DİNLENİYOR" if self.is_listening else "BEKLEMEDE"
+        self.tree_sockets.insert("", "end", iid=iid, values=(
+            port, ip, algo_name, status, "0", "0.0", "%0.0", "BEKLENİYOR"
+        ))
+        self.configured_sockets.append({
+            "port": port, "ip": ip, "algo_id": algo_id, "algo_name": algo_name
+        })
+        self.socket_mgr.add_socket(ip, port, algo_id)
+
+    def add_socket_channel(self):
+        try:
+            ip = self.ent_sock_ip.get().strip()
+            port = int(self.ent_sock_port.get().strip())
+            if not (1 <= port <= 65535):
+                messagebox.showerror("Hata", "Geçersiz port numarası (1-65535 arası olmalı)!")
+                return
+            if not ip:
+                ip = "0.0.0.0"
+
+            iid = str(port)
+            if self.tree_sockets.exists(iid):
+                messagebox.showwarning("Uyarı", f"Port {port} zaten yapılandırılmış! Önce silin veya başka bir port seçin.")
+                return
+
+            algo_idx = self.cmb_sock_algo.current()
+            algo = ALGORITHMS[algo_idx]
+            algo_id = algo["id"]
+            algo_name = get_algo_short_name(algo_id)
+
+            self._insert_socket_row(ip, port, algo_id, algo_name)
+            self.lbl_sock_status.config(text=f"✔ Port {port} listeye eklendi ve {algo_name} atandı.")
+            # Sıradaki portu otomatik arttır
+            self.ent_sock_port.delete(0, tk.END)
+            self.ent_sock_port.insert(0, str(port + 1))
+        except ValueError:
+            messagebox.showerror("Hata", "Lütfen geçerli bir sayısal port girin!")
+
+    def remove_selected_socket(self):
+        selected = self.tree_sockets.selection()
+        if not selected:
+            messagebox.showinfo("Bilgi", "Lütfen kaldırmak istediğiniz soket satırını seçin.")
+            return
+        for item_id in selected:
+            port = int(item_id)
+            self.socket_mgr.remove_socket(port)
+            self.tree_sockets.delete(item_id)
+            self.configured_sockets = [s for s in self.configured_sockets if s["port"] != port]
+            if port in self.socket_stats:
+                del self.socket_stats[port]
+        self._refresh_aggregate_cards()
+        self.lbl_sock_status.config(text="● Seçili soket listeden kaldırıldı.")
+
+    def toggle_all_sockets(self):
         if not self.is_listening:
+            if not self.configured_sockets:
+                messagebox.showwarning("Uyarı", "Yapılandırılmış herhangi bir soket bulunmuyor! Önce soket ekleyin.")
+                return
             try:
-                ip = self.ent_bind_ip.get().strip()
-                port = int(self.ent_bind_port.get().strip())
-                algo_idx = self.cmb_algo.current()
-                algo_id = ALGORITHMS[algo_idx]["id"]
-
-                self.socket_listener = RealSocketListener(host=ip, port=port, algo_id=algo_id)
-                self.socket_listener.start(self.on_real_socket_packet)
+                self.socket_mgr.start_all(self.on_real_socket_packet)
                 self.is_listening = True
-                self.btn_toggle_socket.config(text="⏹ SOKET DİNLEMEYİ DURDUR", bg=CLR_ROSE)
-                self.lbl_sock_status.config(text=f"✔ UDP Soketi Aktif ({ip}:{port}). Dış sistemden gelen gerçek paketler anında sıkıştırılıyor...")
+                self.btn_toggle_socket.config(text="⏹ TÜM SOKET DİNLEMELERİNİ DURDUR", bg=CLR_ROSE)
+                # Tablodaki durumları DİNLENİYOR yap
+                for item_id in self.tree_sockets.get_children():
+                    vals = list(self.tree_sockets.item(item_id, "values"))
+                    vals[3] = "DİNLENİYOR"
+                    self.tree_sockets.item(item_id, values=vals)
+                self.lbl_sock_status.config(text=f"✔ {len(self.configured_sockets)} soket canlı dinleniyor. Ağdan gerçek paketler bekleniyor...")
             except Exception as e:
-                messagebox.showerror("Hata", f"Soket açılamadı: {e}")
+                messagebox.showerror("Hata", f"Soketler başlatılamadı: {e}")
         else:
-            if self.socket_listener:
-                self.socket_listener.stop()
+            self.socket_mgr.stop_all()
             self.is_listening = False
-            self.btn_toggle_socket.config(text="▶ GERÇEK UDP SOKETİNİ DİNLE VE CANLI SIKIŞTIR", bg=CLR_EMERALD)
-            self.lbl_sock_status.config(text="● Soket bağlantısı kapatıldı.")
+            self.btn_toggle_socket.config(text="▶ TÜM YAPILANDIRILMIŞ SOKETLERİ DİNLEMEYİ BAŞLAT", bg=CLR_EMERALD)
+            for item_id in self.tree_sockets.get_children():
+                vals = list(self.tree_sockets.item(item_id, "values"))
+                vals[3] = "DURDURULDU"
+                self.tree_sockets.item(item_id, values=vals)
+            self.lbl_sock_status.config(text="● Tüm soket dinlemeleri durduruldu.")
 
     def on_real_socket_packet(self, meta):
-        self.root.after(0, lambda: self._update_sock_ui(meta))
+        self.root.after(0, lambda: self._update_socket_row(meta))
 
-    def _update_sock_ui(self, meta):
-        self.card_sock_p.config(text=f"{meta['packet_num']:,}")
-        self.card_sock_r.config(text=f"{meta['kbps']:.1f} KB/s")
-        self.card_sock_s.config(text=f"%{meta['savings']:.1f} ({meta['ratio']:.1f}:1)")
-        self.card_sock_c.config(text=f"{meta['crc32']} [OK]", fg=CLR_EMERALD)
+    def _update_socket_row(self, meta):
+        port = meta["port"]
+        iid = str(port)
+        self.socket_stats[port] = meta
+
+        algo_name = get_algo_short_name(meta["algo"])
+
+        if self.tree_sockets.exists(iid):
+            self.tree_sockets.item(iid, values=(
+                port,
+                meta["host"],
+                algo_name,
+                "● AKTİF AKIŞ",
+                f"{meta['packet_num']:,}",
+                f"{meta['kbps']:.1f}",
+                f"%{meta['savings']:.1f} ({meta['ratio']:.1f}:1)",
+                f"{meta['crc32']} [OK]"
+            ))
+
+        self._refresh_aggregate_cards()
+        self.lbl_sock_status.config(
+            text=f"✔ Port {port} üzerinde canlı veri: {meta['raw_len']} bayt -> {meta['comp_len']} bayt sıkıştırıldı ({meta['crc32']})."
+        )
+
+    def _refresh_aggregate_cards(self):
+        total_packets = sum(m["packet_num"] for m in self.socket_stats.values())
+        total_raw = sum(m["total_raw"] for m in self.socket_stats.values())
+        total_comp = sum(m["total_comp"] for m in self.socket_stats.values())
+
+        raw_str = f"{total_raw/1024:.1f} KB" if total_raw < 1024*1024 else f"{total_raw/(1024*1024):.2f} MB"
+        comp_str = f"{total_comp/1024:.1f} KB" if total_comp < 1024*1024 else f"{total_comp/(1024*1024):.2f} MB"
+
+        avg_saving = (1.0 - (total_comp / total_raw)) * 100.0 if total_raw > 0 else 0.0
+
+        self.card_sock_total_p.config(text=f"{total_packets:,}")
+        self.card_sock_raw_data.config(text=raw_str)
+        self.card_sock_comp_data.config(text=comp_str)
+        self.card_sock_avg_saving.config(text=f"%{avg_saving:.1f}")
 
     # -------------------------------------------------------------
     # TAB 4: SPARK DO-178C LEVEL-A FORMAL DOĞRULAMA
@@ -519,7 +764,6 @@ class TacticalArchiveApp:
             messagebox.showerror("Hata", "Lütfen sıkıştırılacak bir klasör veya dosya seçin!")
             return
 
-        # Tek veya coklu dosya destegi
         sources = [s.strip() for s in src_raw.split(";") if s.strip()]
         for s in sources:
             if not os.path.exists(s):
@@ -545,7 +789,7 @@ class TacticalArchiveApp:
                         "saving": (1.0 - sz/raw_sz)*100.0, "count": 16, "algo": algo["name"]
                     }))
                 else:
-                    # Evrensel ve diger algoritmalar icin streaming zstd motoru
+                    # Evrensel ve diğer algoritmalar için streaming zstd motoru
                     raw_total = 0
                     all_items = []
                     for s in sources:

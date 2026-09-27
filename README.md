@@ -48,6 +48,11 @@ Geleneksel arşivleyicilerin (ZIP, RAR) aksine; havacılık veri yapılarındaki
 4. **ARINC 661 Kokpit Arayüzü (CDS Integration)**
    - Askeri cam kokpit ekranları (MFD) ile `A661_CMD_SET_PARAMETER (0xD001)` ikili protokolü üzerinden doğrudan haberleşir.
 
+5. **Çok Kanallı Canlı Ağ Soket Dinleyicisi (Multi-Channel Live UDP Streaming)**
+   - Her UDP portuna bağımsız sıkıştırma algoritması atama imkânı (örn. Port 5555: Omni-Synthesis, Port 5556: TurboQuant, Port 5557: STANAG Hibrit).
+   - Gerçek donanım ve ağ arayüzlerinden gelen paketleri sıfır simülasyon ve sıfır sahte veriyle doğrudan yakalar.
+   - Anlık throughput (KB/s), paket sayısı, net sıkıştırma kazancı (%) ve IEEE 802.3 CRC-32 doğrulaması sunar.
+
 ---
 
 ## 💻 Kurulum & Başlatma (Quickstart)
