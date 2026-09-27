@@ -1,0 +1,18 @@
+[Unit]
+Description=Tactical Archive Embedded Agent Daemon (STANAG-4586 Stream)
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/tactical_agent
+# Uçak / Verici Modu (Ham al, sıkıştır ve yer istasyonuna fırlat)
+ExecStart=/usr/bin/python3 /opt/tactical_agent/tactical_embedded_agent.py --mode tx --ip 0.0.0.0 --port 5555 --dest-ip 192.168.1.100 --dest-port 5555 --algo algo-8
+Restart=always
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

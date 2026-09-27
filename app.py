@@ -231,7 +231,6 @@ class TacticalArchiveApp:
 
         self.ent_src = tk.Entry(row_pick, font=(FONT_FAMILY, 10), bg="#0B0F17", fg=CLR_TEXT, insertbackground=CLR_TEXT, bd=1, relief="solid", highlightbackground=CLR_BORDER)
         self.ent_src.pack(side="left", fill="x", expand=True, ipady=4)
-        self.ent_src.insert(0, r"C:\Users\muham\Desktop\Muhammet-Atmaca-Portfolio")
 
         tk.Button(row_pick, text="📁 Klasör Seç...", font=(FONT_FAMILY, 9, "bold"), bg=CLR_CARD_ALT, fg=CLR_CYAN, bd=1, relief="ridge", cursor="hand2", command=self.browse_src_folder, padx=12, pady=3).pack(side="left", padx=4)
         tk.Button(row_pick, text="📄 Dosya(lar) Seç...", font=(FONT_FAMILY, 9, "bold"), bg=CLR_CARD_ALT, fg=CLR_CYAN, bd=1, relief="ridge", cursor="hand2", command=self.browse_src_files, padx=12, pady=3).pack(side="left", padx=4)
@@ -266,7 +265,6 @@ class TacticalArchiveApp:
         tk.Label(row_dest, text="Hedef Çıktı (.tact):", font=(FONT_FAMILY, 9, "bold"), fg=CLR_MUTED, bg=CLR_CARD).pack(side="left")
         self.ent_out = tk.Entry(row_dest, font=(FONT_FAMILY, 9), bg="#0B0F17", fg=CLR_TEXT, insertbackground=CLR_TEXT, bd=1, relief="solid")
         self.ent_out.pack(side="left", fill="x", expand=True, padx=8, ipady=3)
-        self.ent_out.insert(0, r"C:\Users\muham\Desktop\Muhammet-Atmaca-Portfolio.tact")
 
         tk.Button(row_dest, text="Konum...", font=(FONT_FAMILY, 9), bg=CLR_CARD_ALT, fg=CLR_MUTED, bd=1, relief="ridge", cursor="hand2", command=self.browse_out_tact, padx=10, pady=2).pack(side="right")
 
@@ -330,7 +328,6 @@ class TacticalArchiveApp:
         tk.Label(row1, text="Taktik Arşiv (.tact):", font=(FONT_FAMILY, 10, "bold"), fg=CLR_TEXT, bg=CLR_CARD, width=20, anchor="w").pack(side="left")
         self.ent_ext_src = tk.Entry(row1, font=(FONT_FAMILY, 10), bg="#0B0F17", fg=CLR_TEXT, insertbackground=CLR_TEXT, bd=1, relief="solid")
         self.ent_ext_src.pack(side="left", fill="x", expand=True, padx=8, ipady=3)
-        self.ent_ext_src.insert(0, r"C:\Users\muham\Desktop\Muhammet-Atmaca-Portfolio.tact")
 
         tk.Button(row1, text="Arşiv Seç...", font=(FONT_FAMILY, 9, "bold"), bg=CLR_CARD_ALT, fg=CLR_CYAN, bd=1, relief="ridge", cursor="hand2", command=self.browse_ext_tact, padx=12, pady=2).pack(side="right")
 
@@ -340,7 +337,6 @@ class TacticalArchiveApp:
         tk.Label(row2, text="Açılacak Hedef Klasör:", font=(FONT_FAMILY, 10, "bold"), fg=CLR_TEXT, bg=CLR_CARD, width=20, anchor="w").pack(side="left")
         self.ent_ext_dest = tk.Entry(row2, font=(FONT_FAMILY, 10), bg="#0B0F17", fg=CLR_TEXT, insertbackground=CLR_TEXT, bd=1, relief="solid")
         self.ent_ext_dest.pack(side="left", fill="x", expand=True, padx=8, ipady=3)
-        self.ent_ext_dest.insert(0, r"C:\Users\muham\Desktop\portfolio_extracted")
 
         tk.Button(row2, text="Klasör Seç...", font=(FONT_FAMILY, 9), bg=CLR_CARD_ALT, fg=CLR_MUTED, bd=1, relief="ridge", cursor="hand2", command=self.browse_ext_dest, padx=12, pady=2).pack(side="right")
 
@@ -543,28 +539,16 @@ class TacticalArchiveApp:
         # Durum Göstergesi
         self.lbl_sock_status = tk.Label(
             panel,
-            text="● Tüm soketler beklemede. Dış kaynaktan UDP paketi geldiğinde ilgili port satırı canlı güncellenecektir.",
+            text="● Yapılandırılmış soket bulunmuyor. Yukarıdaki panelden IP, Port ve Algoritma seçip [+ Soketi Ekle] butonuna basın.",
             font=(FONT_FAMILY, 9),
             fg=CLR_MUTED,
             bg=CLR_BG
         )
         self.lbl_sock_status.pack(anchor="w", padx=6, pady=2)
 
-        # Varsayılan standart taktiksel portları yükle (Port 5555, 5556, 5557)
-        self._init_default_sockets()
-
     def on_sock_algo_selected(self, event=None):
         idx = self.cmb_sock_algo.current()
         self.lbl_sock_algo_desc.config(text=f"Atanacak Algoritma: {ALGORITHMS[idx]['desc']}")
-
-    def _init_default_sockets(self):
-        default_configs = [
-            ("0.0.0.0", 5555, "algo-8", "Algoritma 8: Master Omni-Synthesis (11.6:1)", "compress", None, None),
-            ("0.0.0.0", 5556, "algo-6", "Algoritma 6: Google TurboQuant (8:1 Radar)", "compress", None, None),
-            ("0.0.0.0", 5557, "algo-4", "Algoritma 4: STANAG 3-Kademeli Hibrit (9.1:1)", "decompress", None, None)
-        ]
-        for ip, port, algo_id, algo_name, mode, fwd_h, fwd_p in default_configs:
-            self._insert_socket_row(ip, port, algo_id, algo_name, mode=mode, forward_host=fwd_h, forward_port=fwd_p)
 
     def _insert_socket_row(self, ip, port, algo_id, algo_name, mode="compress", forward_host=None, forward_port=None):
         iid = str(port)
