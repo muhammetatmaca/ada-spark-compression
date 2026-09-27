@@ -1,0 +1,14 @@
+name = "tactical_archive"
+description = ""
+version = "0.1.0-dev"
+
+authors = ["Your Name"]
+maintainers = ["Your Name <example@example.com>"]
+licenses = "MIT OR Apache-2.0 WITH LLVM-exception"
+website = ""
+tags = []
+
+executables = ["tactical_archive"]
+
+[[depends-on]]
+gnatprove = "^16.1.0"
