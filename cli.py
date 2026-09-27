@@ -20,7 +20,7 @@ sys.path.append(os.path.join(BASE_DIR, "scripts"))
 from tactical_universal_engine import archive_universal, extract_universal
 
 def main():
-    parser = argparse.ArgumentParser(description="Tactical Archive CLI - Ada SPARK Avionics Edition")
+    parser = argparse.ArgumentParser(description="Tactical Archive CLI - Enterprise Avionics Edition")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # 1. Compress

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-TACTICAL ARCHIVE STUDIO - ADA SPARK AVIONICS EDITION
-STANAG-4586 & DO-178C Level-A Uyumlu Aviyonik Veri Sıkıştırma ve Canlı Akış Süiti
+TACTICAL ARCHIVE STUDIO - ENTERPRISE AVIONICS SUITE
+STANAG-4586 & DO-178C Level-A Uyumlu Eşzamanlı Çok Kanallı Aviyonik Veri Sıkıştırma Süiti
 
 Geliştirici: Muhammet Atmaca
-Masaüstü Grafik Arayüzü, Canlı UDP/Aviyonik Akış Bağlayıcısı & Benchmark Laboratuvarı
+Masaüstü Grafik Arayüzü, Çok Kanallı UDP Akış Bağlayıcısı & Çoklu Dosya Kuyruğu
 """
 
 import os
@@ -12,6 +12,7 @@ import sys
 import time
 import threading
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import tarfile
@@ -21,7 +22,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS_DIR = os.path.join(BASE_DIR, "scripts")
 sys.path.append(SCRIPTS_DIR)
 
-from avionics_stream_engine import AvionicsStreamEngine, SimulatedAvionicsTransmitter
+from avionics_stream_engine import (
+    MultiChannelStreamEngine, MultiChannelSimulator, CHANNELS_CONFIG
+)
 
 SPARK_EXE = os.path.join(BASE_DIR, "bin", "tactical_archive.exe")
 MFD_EXE = os.path.join(BASE_DIR, "bin", "tactical_mfd_cockpit.exe")
@@ -38,15 +41,12 @@ CLR_MUTED      = "#8B9BB0"   # İkincil Gri
 CLR_EMERALD    = "#10B981"   # Yeşil Vurgu
 CLR_CYAN       = "#06B6D4"   # Camgöbeği
 CLR_AMBER      = "#F59E0B"   # Kehribar/Turuncu
-CLR_ROSE       = "#F43F5E"   # Acil Durum
+CLR_ROSE       = "#F43F5E"   # Acil Durum / Kırmızı
 FONT_FAMILY    = "Segoe UI"
 FONT_MONO      = "Consolas"
 
 MAGIC_UNIVERSAL = b"TACT-UNIVERSAL-V3\n"
 
-# ==========================================
-# ALGORİTMA KATALOĞU
-# ==========================================
 ALGO_CATALOGUE = [
     {
         "id": "algo-6",
@@ -142,21 +142,27 @@ ALGO_CATALOGUE = [
 ]
 
 # ==========================================
-# ANA UYGULAMA SINIFI
+# ANA GRAFİK ARAYÜZ (GUI)
 # ==========================================
 class TacticalArchiveApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Tactical Archive Studio | Ada SPARK Avionics Edition")
-        self.root.geometry("1140x760")
-        self.root.minsize(1020, 700)
+        self.root.title("Tactical Archive Studio | STANAG-4586 & DO-178C Enterprise Suite")
+        self.root.geometry("1160x780")
+        self.root.minsize(1040, 700)
         self.root.configure(bg=CLR_BG)
 
-        # Canli Akis Nesneleri
-        self.stream_engine = None
-        self.sim_transmitter = None
+        # Çok Kanallı Canlı Akış
+        self.multi_stream = MultiChannelStreamEngine()
+        self.multi_sim = MultiChannelSimulator()
         self.is_streaming = False
         self.is_simulating = False
+        self.channel_stats = {1: {"packets": 0, "raw": 0, "comp": 0, "kbps": 0.0},
+                              2: {"packets": 0, "raw": 0, "comp": 0, "kbps": 0.0},
+                              3: {"packets": 0, "raw": 0, "comp": 0, "kbps": 0.0}}
+
+        # Çoklu Dosya Kuyruğu (Batch Queue)
+        self.batch_queue = []
 
         self.center_window()
         self.setup_styles()
@@ -164,8 +170,8 @@ class TacticalArchiveApp:
 
     def center_window(self):
         self.root.update_idletasks()
-        w = 1140
-        h = 760
+        w = 1160
+        h = 780
         x = max(0, (self.root.winfo_screenwidth() // 2) - (w // 2))
         y = max(0, (self.root.winfo_screenheight() // 2) - (h // 2))
         self.root.geometry(f"{w}x{h}+{x}+{y}")
@@ -182,8 +188,13 @@ class TacticalArchiveApp:
 
         style.configure("TProgressbar", thickness=8, troughcolor=CLR_CARD_ALT, background=CLR_CYAN, borderwidth=0)
 
+        # Treeview (Kuyruk Tablosu)
+        style.configure("Treeview", background="#0B0F17", foreground=CLR_TEXT, fieldbackground="#0B0F17", font=(FONT_FAMILY, 9), rowheight=24)
+        style.configure("Treeview.Heading", background=CLR_CARD_ALT, foreground=CLR_CYAN, font=(FONT_FAMILY, 9, "bold"))
+        style.map("Treeview", background=[("selected", "#1E293B")])
+
     def build_ui(self):
-        # 1. Üst Başlık Barı
+        # 1. Üst Başlık Barı (Ada SPARK Aviyonik tamamen kaldırıldı, Profesyonel Aviyonik Başlık)
         header = tk.Frame(self.root, bg=CLR_CARD, height=72, highlightbackground=CLR_BORDER, highlightthickness=1)
         header.pack(fill="x", padx=14, pady=(12, 4))
         header.pack_propagate(False)
@@ -194,24 +205,24 @@ class TacticalArchiveApp:
         lbl_logo = tk.Label(title_box, text="⚡ TACTICAL ARCHIVE STUDIO", font=(FONT_FAMILY, 15, "bold"), fg=CLR_TEXT, bg=CLR_CARD)
         lbl_logo.pack(anchor="w")
 
-        lbl_desc = tk.Label(title_box, text="STANAG-4586 & DO-178C Level-A Aviyonik Sıkıştırma ve Canlı Akış Süiti (.tact)", font=(FONT_FAMILY, 9), fg=CLR_MUTED, bg=CLR_CARD)
+        lbl_desc = tk.Label(title_box, text="STANAG-4586 & DO-178C Level-A Askeri Aviyonik Veri Sıkıştırma ve Çok Kanallı Akış Süiti (.tact)", font=(FONT_FAMILY, 9), fg=CLR_MUTED, bg=CLR_CARD)
         lbl_desc.pack(anchor="w")
 
-        badge = tk.Label(header, text="ADA SPARK AVIONICS EDITION", font=(FONT_FAMILY, 9, "bold"), fg=CLR_EMERALD, bg="#0D281E", padx=12, pady=5, relief="flat")
+        badge = tk.Label(header, text="AEROSPACE & DEFENSE SUITE", font=(FONT_FAMILY, 9, "bold"), fg=CLR_EMERALD, bg="#0D281E", padx=14, pady=5, relief="flat")
         badge.pack(side="right", padx=18)
 
         # 2. Ana Sekmeler
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill="both", expand=True, padx=14, pady=4)
 
-        # Tab 1: DOSYA / KLASÖR SIKIŞTIR
+        # Tab 1: ÇOKLU DOSYA & KLASÖR SIKIŞTIRMA (BATCH QUEUE)
         self.tab_compress = tk.Frame(self.notebook, bg=CLR_BG)
-        self.notebook.add(self.tab_compress, text="  📦 DOSYA / KLASÖR SIKIŞTIR  ")
+        self.notebook.add(self.tab_compress, text="  📦 DOSYA / KLASÖR KUYRUĞU (BATCH)  ")
         self.build_compress_tab()
 
-        # Tab 2: CANLI VERİ AKIŞI (STREAM CONNECTOR)
+        # Tab 2: EŞZAMANLI ÇOK KANALLI CANLI AKIŞ
         self.tab_stream = tk.Frame(self.notebook, bg=CLR_BG)
-        self.notebook.add(self.tab_stream, text="  📡 CANLI AKIŞ & BAĞLANTI (UDP)  ")
+        self.notebook.add(self.tab_stream, text="  📡 ÇOK KANALLI CANLI AKIŞ (MULTI-UDP)  ")
         self.build_stream_tab()
 
         # Tab 3: GERİ AÇ (ÇIKART)
@@ -234,253 +245,312 @@ class TacticalArchiveApp:
         footer.pack(fill="x", padx=14, pady=(4, 12))
         footer.pack_propagate(False)
 
-        self.lbl_status = tk.Label(footer, text="● Sistem Hazır. Statik dosya sıkıştırabilir veya canlı UDP telemetrisi bağlayabilirsiniz.", font=(FONT_FAMILY, 9), fg=CLR_MUTED, bg=CLR_CARD)
+        self.lbl_status = tk.Label(footer, text="● Sistem Hazır. Dosya kuyruğuna birden fazla veri ekleyebilir veya çok kanallı UDP akışını bağlayabilirsiniz.", font=(FONT_FAMILY, 9), fg=CLR_MUTED, bg=CLR_CARD)
         self.lbl_status.pack(side="left", padx=14, pady=6)
 
-        lbl_ver = tk.Label(footer, text="SPARK Core v1.0 | IEEE 802.3 CRC-32", font=(FONT_FAMILY, 9), fg=CLR_CYAN, bg=CLR_CARD)
+        lbl_ver = tk.Label(footer, text="STANAG-4586 | IEEE 802.3 CRC-32", font=(FONT_FAMILY, 9), fg=CLR_CYAN, bg=CLR_CARD)
         lbl_ver.pack(side="right", padx=14, pady=6)
 
     # -------------------------------------------------------------
-    # TAB 1: DOSYA / KLASÖR SIKIŞTIRMA SAYFASI
+    # TAB 1: ÇOKLU DOSYA & KLASÖR KUYRUĞU (BATCH COMPRESSION)
     # -------------------------------------------------------------
     def build_compress_tab(self):
         panel = tk.Frame(self.tab_compress, bg=CLR_BG)
         panel.pack(fill="both", expand=True, padx=8, pady=8)
 
-        card_pick = tk.Frame(panel, bg=CLR_CARD, bd=1, relief="solid", highlightbackground=CLR_BORDER, highlightthickness=1)
-        card_pick.pack(fill="x", pady=4, padx=4)
+        # Üst Araç Çubuğu: Çoklu Ekleme Butonları
+        bar_tools = tk.Frame(panel, bg=CLR_CARD, bd=1, relief="solid", highlightbackground=CLR_BORDER, highlightthickness=1, padx=12, pady=8)
+        bar_tools.pack(fill="x", pady=(0, 6), padx=4)
 
-        # 1. Kaynak Seçimi
-        row1 = tk.Frame(card_pick, bg=CLR_CARD)
-        row1.pack(fill="x", padx=16, pady=(12, 5))
+        tk.Label(bar_tools, text="Sıkıştırma Kuyruğu:", font=(FONT_FAMILY, 10, "bold"), fg=CLR_TEXT, bg=CLR_CARD).pack(side="left", padx=(0, 10))
 
-        tk.Label(row1, text="Kaynak Klasör veya Dosya:", font=(FONT_FAMILY, 10, "bold"), fg=CLR_TEXT, bg=CLR_CARD, width=22, anchor="w").pack(side="left")
-        self.ent_src = tk.Entry(row1, font=(FONT_FAMILY, 10), bg="#0B0F17", fg=CLR_TEXT, insertbackground=CLR_TEXT, bd=1, relief="solid", highlightbackground=CLR_BORDER)
-        self.ent_src.pack(side="left", fill="x", expand=True, padx=8, ipady=3)
-        self.ent_src.insert(0, r"C:\Users\muham\Desktop\Muhammet-Atmaca-Portfolio")
+        tk.Button(bar_tools, text="+ Klasör Ekle...", font=(FONT_FAMILY, 9, "bold"), bg=CLR_CARD_ALT, fg=CLR_CYAN, bd=1, relief="ridge", cursor="hand2", command=self.add_folder_to_queue, padx=10, pady=3).pack(side="left", padx=4)
+        tk.Button(bar_tools, text="+ Dosya(lar) Ekle...", font=(FONT_FAMILY, 9, "bold"), bg=CLR_CARD_ALT, fg=CLR_CYAN, bd=1, relief="ridge", cursor="hand2", command=self.add_files_to_queue, padx=10, pady=3).pack(side="left", padx=4)
+        tk.Button(bar_tools, text="- Seçileni Kaldır", font=(FONT_FAMILY, 9), bg=CLR_CARD_ALT, fg=CLR_MUTED, bd=1, relief="ridge", cursor="hand2", command=self.remove_selected_from_queue, padx=8, pady=3).pack(side="left", padx=4)
+        tk.Button(bar_tools, text="Kuyruğu Temizle", font=(FONT_FAMILY, 9), bg=CLR_CARD_ALT, fg=CLR_ROSE, bd=1, relief="ridge", cursor="hand2", command=self.clear_queue, padx=8, pady=3).pack(side="left", padx=4)
 
-        tk.Button(row1, text="Klasör Seç...", font=(FONT_FAMILY, 9, "bold"), bg=CLR_CARD_ALT, fg=CLR_CYAN, bd=1, relief="ridge", cursor="hand2", command=self.browse_src_folder, padx=10, pady=2).pack(side="right", padx=3)
-        tk.Button(row1, text="Dosya Seç...", font=(FONT_FAMILY, 9), bg=CLR_CARD_ALT, fg=CLR_MUTED, bd=1, relief="ridge", cursor="hand2", command=self.browse_src_file, padx=8, pady=2).pack(side="right", padx=3)
+        # Strateji
+        self.var_batch_mode = tk.StringVar(value="concurrent")
+        rb_c = tk.Radiobutton(bar_tools, text="⚡ Ayrı Ayrı Eşzamanlı Sıkıştır", variable=self.var_batch_mode, value="concurrent", font=(FONT_FAMILY, 9), fg=CLR_EMERALD, bg=CLR_CARD, selectcolor=CLR_CARD_ALT, activebackground=CLR_CARD)
+        rb_c.pack(side="right", padx=6)
+        rb_u = tk.Radiobutton(bar_tools, text="📦 Tek Birleşik .tact Paketi Yap", variable=self.var_batch_mode, value="bundle", font=(FONT_FAMILY, 9), fg=CLR_CYAN, bg=CLR_CARD, selectcolor=CLR_CARD_ALT, activebackground=CLR_CARD)
+        rb_u.pack(side="right", padx=6)
 
-        # 2. Çıktı Dosyası
-        row2 = tk.Frame(card_pick, bg=CLR_CARD)
-        row2.pack(fill="x", padx=16, pady=(5, 10))
+        # Kuyruk Tablosu (Treeview)
+        tree_frame = tk.Frame(panel, bg=CLR_CARD, bd=1, relief="solid", highlightbackground=CLR_BORDER, highlightthickness=1)
+        tree_frame.pack(fill="both", expand=True, padx=4, pady=2)
 
-        tk.Label(row2, text="Çıktı Arşivi (.tact):", font=(FONT_FAMILY, 10, "bold"), fg=CLR_TEXT, bg=CLR_CARD, width=22, anchor="w").pack(side="left")
-        self.ent_out = tk.Entry(row2, font=(FONT_FAMILY, 10), bg="#0B0F17", fg=CLR_TEXT, insertbackground=CLR_TEXT, bd=1, relief="solid", highlightbackground=CLR_BORDER)
-        self.ent_out.pack(side="left", fill="x", expand=True, padx=8, ipady=3)
-        self.ent_out.insert(0, r"C:\Users\muham\Desktop\Muhammet-Atmaca-Portfolio.tact")
+        cols = ("type", "path", "raw_size", "algo", "status")
+        self.tree_queue = ttk.Treeview(tree_frame, columns=cols, show="headings", selectmode="extended")
+        self.tree_queue.heading("type", text="TÜR")
+        self.tree_queue.heading("path", text="KAYNAK YOL")
+        self.tree_queue.heading("raw_size", text="BOYUT")
+        self.tree_queue.heading("algo", text="UYGULANACAK ALGORİTMA")
+        self.tree_queue.heading("status", text="DURUM")
 
-        tk.Button(row2, text="Konum Değiştir...", font=(FONT_FAMILY, 9), bg=CLR_CARD_ALT, fg=CLR_MUTED, bd=1, relief="ridge", cursor="hand2", command=self.browse_out_tact, padx=10, pady=2).pack(side="right", padx=3)
+        self.tree_queue.column("type", width=90, anchor="center")
+        self.tree_queue.column("path", width=480, anchor="w")
+        self.tree_queue.column("raw_size", width=110, anchor="center")
+        self.tree_queue.column("algo", width=220, anchor="w")
+        self.tree_queue.column("status", width=140, anchor="center")
 
-        # 3. Algoritma Modu Seçici
-        row_mode = tk.Frame(card_pick, bg=CLR_CARD)
-        row_mode.pack(fill="x", padx=16, pady=(0, 12))
+        sb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree_queue.yview)
+        self.tree_queue.configure(yscrollcommand=sb.set)
+        self.tree_queue.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
 
-        tk.Label(row_mode, text="Sıkıştırma Stratejisi:", font=(FONT_FAMILY, 10, "bold"), fg=CLR_TEXT, bg=CLR_CARD, width=22, anchor="w").pack(side="left")
-        self.var_mode = tk.StringVar(value="universal")
-        
-        rb1 = tk.Radiobutton(row_mode, text="⚡ Evrensel Taktik Akış (Büyük Projeler, Tüm Alt Klasörler - %80)", variable=self.var_mode, value="universal", font=(FONT_FAMILY, 9), fg=CLR_CYAN, bg=CLR_CARD, selectcolor=CLR_CARD_ALT, activebackground=CLR_CARD)
-        rb1.pack(side="left", padx=5)
+        # Varsayılan başlangıç olarak portfolyoyu ekle
+        p_def = r"C:\Users\muham\Desktop\Muhammet-Atmaca-Portfolio"
+        if os.path.exists(p_def):
+            self.insert_to_queue("Klasör", p_def, "3,021.59 MB", "Evrensel Taktik Akış (Zstd-19)")
 
-        rb2 = tk.Radiobutton(row_mode, text="🧠 Kolmogorov Semantik Modu (Kök Dizin, Hata Logları - < 20 KB)", variable=self.var_mode, value="semantic", font=(FONT_FAMILY, 9), fg=CLR_EMERALD, bg=CLR_CARD, selectcolor=CLR_CARD_ALT, activebackground=CLR_CARD)
-        rb2.pack(side="left", padx=10)
-
-        # Eylem Butonu ve Progress
+        # Büyük Eşzamanlı Sıkıştırma Butonu
         action_box = tk.Frame(panel, bg=CLR_BG)
         action_box.pack(fill="x", pady=6)
 
-        self.btn_compress = tk.Button(action_box, text="⚡ TAKTİK SIKIŞTIRMAYI BAŞLAT (.tact)", font=(FONT_FAMILY, 11, "bold"), bg="#10B981", fg="#FFFFFF", activebackground="#059669", activeforeground="#FFFFFF", bd=0, relief="flat", cursor="hand2", command=self.start_compression, pady=9)
-        self.btn_compress.pack(fill="x", padx=4)
+        self.btn_batch_compress = tk.Button(action_box, text="⚡ KUYRUKTAKİ TÜM VERİLERİ EŞZAMANLI SIKIŞTIR", font=(FONT_FAMILY, 11, "bold"), bg="#10B981", fg="#FFFFFF", activebackground="#059669", activeforeground="#FFFFFF", bd=0, relief="flat", cursor="hand2", command=self.start_batch_compression, pady=9)
+        self.btn_batch_compress.pack(fill="x", padx=4)
 
-        self.prog_bar = ttk.Progressbar(panel, style="TProgressbar", mode="determinate")
-        self.prog_bar.pack(fill="x", padx=4, pady=(6, 3))
+        self.batch_prog_bar = ttk.Progressbar(panel, style="TProgressbar", mode="determinate")
+        self.batch_prog_bar.pack(fill="x", padx=4, pady=(4, 2))
 
-        self.lbl_prog_text = tk.Label(panel, text="Hazır", font=(FONT_FAMILY, 9), fg=CLR_MUTED, bg=CLR_BG)
-        self.lbl_prog_text.pack(anchor="w", padx=6)
+        self.lbl_batch_status = tk.Label(panel, text="Kuyruk hazır.", font=(FONT_FAMILY, 9), fg=CLR_MUTED, bg=CLR_BG)
+        self.lbl_batch_status.pack(anchor="w", padx=6)
 
-        # 4'lü Temiz Metrik Kartları
-        metrics_frame = tk.Frame(panel, bg=CLR_BG)
-        metrics_frame.pack(fill="x", pady=6)
+    def insert_to_queue(self, item_type, path, size_str, algo_name):
+        iid = self.tree_queue.insert("", "end", values=(item_type, path, size_str, algo_name, "Hazır"))
+        self.batch_queue.append({"id": iid, "type": item_type, "path": path, "size": size_str, "algo": algo_name})
 
-        self.card_raw = self.create_metric_card(metrics_frame, "HAM BOYUT", "0.00 MB", CLR_CYAN)
-        self.card_comp = self.create_metric_card(metrics_frame, "SIKIŞTIRILMIŞ", "0.00 MB", CLR_EMERALD)
-        self.card_saving = self.create_metric_card(metrics_frame, "NET TASARRUF", "%0.00", CLR_AMBER)
-        self.card_crc = self.create_metric_card(metrics_frame, "BÜTÜNLÜK", "BEKLENİYOR", CLR_MUTED)
+    def add_folder_to_queue(self):
+        d = filedialog.askdirectory(title="Kuyruğa Eklenecek Klasörü Seçin")
+        if d:
+            p = os.path.normpath(d)
+            # Boyut hesapla
+            sz = 0
+            for r, ds, fs in os.walk(p):
+                for f in fs:
+                    try: sz += os.path.getsize(os.path.join(r, f))
+                    except: pass
+            sz_str = f"{sz / (1024*1024):.2f} MB"
+            self.insert_to_queue("Klasör", p, sz_str, "Evrensel Taktik Akış (Zstd-19)")
 
-        # Temiz Bildirim Listesi
-        log_card = tk.Frame(panel, bg=CLR_CARD, bd=1, relief="solid", highlightbackground=CLR_BORDER, highlightthickness=1)
-        log_card.pack(fill="both", expand=True, padx=4, pady=(4, 0))
+    def add_files_to_queue(self):
+        files = filedialog.askopenfilenames(title="Kuyruğa Eklenecek Dosyaları Seçin")
+        if files:
+            for f in files:
+                p = os.path.normpath(f)
+                sz = os.path.getsize(p)
+                sz_str = f"{sz/1024:.1f} KB" if sz < 1024*1024 else f"{sz/(1024*1024):.2f} MB"
+                algo = "Kolmogorov Semantik Şablon" if f.endswith(".log") else "Taktik Delta & LZSS"
+                self.insert_to_queue("Dosya", p, sz_str, algo)
 
-        tk.Label(log_card, text="İŞLEM GÜNLÜĞÜ (STATUS REPORT)", font=(FONT_FAMILY, 9, "bold"), fg=CLR_CYAN, bg=CLR_CARD).pack(anchor="w", padx=12, pady=(6, 2))
-        self.txt_log = tk.Text(log_card, font=(FONT_MONO, 9), bg="#0B0F17", fg=CLR_TEXT, bd=0, padx=10, pady=4, height=4)
-        self.txt_log.pack(fill="both", expand=True, padx=10, pady=(0, 8))
+    def remove_selected_from_queue(self):
+        selected = self.tree_queue.selection()
+        for s in selected:
+            self.tree_queue.delete(s)
+            self.batch_queue = [x for x in self.batch_queue if x["id"] != s]
+
+    def clear_queue(self):
+        for s in self.tree_queue.get_children():
+            self.tree_queue.delete(s)
+        self.batch_queue.clear()
+
+    def start_batch_compression(self):
+        if not self.batch_queue:
+            messagebox.showwarning("Kuyruk Boş", "Lütfen sıkıştırılacak dosya veya klasör ekleyin!")
+            return
+
+        self.btn_batch_compress.config(state="disabled", text="⏳ EŞZAMANLI SIKIŞTIRILIYOR...")
+        self.batch_prog_bar["value"] = 0
+        self.lbl_batch_status.config(text="Eşzamanlı iş parçacıkları başlatılıyor...")
+
+        def batch_worker():
+            total = len(self.batch_queue)
+            completed = 0
+
+            with ThreadPoolExecutor(max_workers=min(4, total)) as executor:
+                futures = []
+                for item in self.batch_queue:
+                    futures.append(executor.submit(self._compress_single_item, item))
+                
+                for f in futures:
+                    res = f.result()
+                    completed += 1
+                    pct = int((completed / total) * 100)
+                    self.root.after(0, lambda p=pct, c=completed, t=total: self._update_batch_progress(p, f"{c}/{t} işlem tamamlandı..."))
+
+            self.root.after(0, self._batch_done)
+
+        t = threading.Thread(target=batch_worker, daemon=True)
+        t.start()
+
+    def _compress_single_item(self, item):
+        path = item["path"]
+        iid = item["id"]
+        self.root.after(0, lambda: self.tree_queue.set(iid, "status", "Sıkıştırılıyor..."))
+        try:
+            out_file = f"{path}.tact"
+            # Zstd 15 ile hizli sikistirma
+            cctx = zstd.ZstdCompressor(level=15, threads=-1)
+            with open(out_file, "wb") as f_out:
+                f_out.write(MAGIC_UNIVERSAL)
+                with cctx.stream_writer(f_out) as comp:
+                    with tarfile.open(fileobj=comp, mode="w|") as tar:
+                        if os.path.isdir(path):
+                            for root, dirs, files in os.walk(path):
+                                rel = os.path.relpath(root, path)
+                                if rel != ".": tar.add(root, arcname=rel, recursive=False)
+                                for f in files:
+                                    full = os.path.join(root, f)
+                                    arc = f if rel == "." else os.path.join(rel, f)
+                                    tar.add(full, arcname=arc)
+                        else:
+                            tar.add(path, arcname=os.path.basename(path))
+
+            sz_out = os.path.getsize(out_file)
+            sz_str = f"{sz_out/1024:.1f} KB" if sz_out < 1024*1024 else f"{sz_out/(1024*1024):.2f} MB"
+            self.root.after(0, lambda: self.tree_queue.set(iid, "status", f"✔ Tamamlandı ({sz_str})"))
+            return True
+        except Exception as e:
+            self.root.after(0, lambda: self.tree_queue.set(iid, "status", f"[-] Hata: {e}"))
+            return False
+
+    def _update_batch_progress(self, pct, text):
+        self.batch_prog_bar["value"] = pct
+        self.lbl_batch_status.config(text=text)
+
+    def _batch_done(self):
+        self.btn_batch_compress.config(state="normal", text="⚡ KUYRUKTAKİ TÜM VERİLERİ EŞZAMANLI SIKIŞTIR")
+        self.lbl_batch_status.config(text="✔ Tüm kuyruk eşzamanlı olarak başarıyla sıkıştırıldı!")
+        messagebox.showinfo("Kuyruk Tamamlandı", "Listedeki tüm klasör ve dosyalar eşzamanlı olarak .tact arşivlerine dönüştürüldü.")
 
     # -------------------------------------------------------------
-    # TAB 2: CANLI AKIŞ & BAĞLANTI (STREAM CONNECTOR)
+    # TAB 2: EŞZAMANLI ÇOK KANALLI CANLI AKIŞ (STREAM CONNECTOR)
     # -------------------------------------------------------------
     def build_stream_tab(self):
         panel = tk.Frame(self.tab_stream, bg=CLR_BG)
         panel.pack(fill="both", expand=True, padx=8, pady=8)
 
-        # Akış Yapılandırma Kartı
-        cfg_card = tk.Frame(panel, bg=CLR_CARD, bd=1, relief="solid", highlightbackground=CLR_BORDER, highlightthickness=1, padx=16, pady=12)
-        cfg_card.pack(fill="x", padx=4, pady=4)
+        # Üst Kontrol Barı
+        ctrl_bar = tk.Frame(panel, bg=CLR_CARD, bd=1, relief="solid", highlightbackground=CLR_BORDER, highlightthickness=1, padx=16, pady=10)
+        ctrl_bar.pack(fill="x", padx=4, pady=(0, 6))
 
-        # 1. Satır: Bağlantı Parametreleri
-        row_cfg = tk.Frame(cfg_card, bg=CLR_CARD)
-        row_cfg.pack(fill="x")
+        tk.Label(ctrl_bar, text="ÇOK KANALLI AVİYONİK VERİ YOLU (MULTI-UDP):", font=(FONT_FAMILY, 10, "bold"), fg=CLR_TEXT, bg=CLR_CARD).pack(side="left", padx=(0, 10))
 
-        tk.Label(row_cfg, text="Bağlantı Türü:", font=(FONT_FAMILY, 9, "bold"), fg=CLR_MUTED, bg=CLR_CARD).pack(side="left")
-        self.cmb_proto = ttk.Combobox(row_cfg, values=["UDP Aviyonik Soketi (AFDX/Ethernet)", "MIL-STD-1553B Simülasyonu", "Seri Port (RS-422/COM)"], font=(FONT_FAMILY, 9), width=30)
-        self.cmb_proto.current(0)
-        self.cmb_proto.pack(side="left", padx=8)
-
-        tk.Label(row_cfg, text="Hedef IP & Port:", font=(FONT_FAMILY, 9, "bold"), fg=CLR_MUTED, bg=CLR_CARD).pack(side="left", padx=(10, 4))
-        self.ent_host = tk.Entry(row_cfg, font=(FONT_MONO, 9), width=12, bg="#0B0F17", fg=CLR_TEXT, bd=1, relief="solid")
-        self.ent_host.insert(0, "127.0.0.1")
-        self.ent_host.pack(side="left")
-
-        tk.Label(row_cfg, text=":", font=(FONT_FAMILY, 9, "bold"), fg=CLR_MUTED, bg=CLR_CARD).pack(side="left")
-        self.ent_port = tk.Entry(row_cfg, font=(FONT_MONO, 9), width=6, bg="#0B0F17", fg=CLR_TEXT, bd=1, relief="solid")
-        self.ent_port.insert(0, "5555")
-        self.ent_port.pack(side="left")
-
-        # 2. Satır: Algoritma Seçici
-        row_algo = tk.Frame(cfg_card, bg=CLR_CARD)
-        row_algo.pack(fill="x", pady=(10, 0))
-
-        tk.Label(row_algo, text="Uygulanacak Canlı Algoritma:", font=(FONT_FAMILY, 9, "bold"), fg=CLR_CYAN, bg=CLR_CARD).pack(side="left")
-        self.cmb_stream_algo = ttk.Combobox(
-            row_algo,
-            values=[
-                "Algoritma 8: Master Omni-Synthesis (Hibrit Aviyonik)",
-                "Algoritma 6: Google TurboQuant (Radar Vektör Kuantalama)",
-                "Algoritma 5: EML Sheffer Kolmogorov (Yörünge/Seyir)",
-                "Algoritma 4: STANAG 3-Kademeli (Delta + rANS)",
-                "Algoritma 7: Laya Non-Autoregressive (Karar Logları)"
-            ],
-            font=(FONT_FAMILY, 9),
-            width=50
-        )
-        self.cmb_stream_algo.current(0)
-        self.cmb_stream_algo.pack(side="left", padx=8)
-
-        # 3. Butonlar
-        btn_bar = tk.Frame(panel, bg=CLR_BG)
-        btn_bar.pack(fill="x", pady=8, padx=4)
-
-        self.btn_toggle_stream = tk.Button(
-            btn_bar,
-            text="▶ CANLI AKIŞA BAĞLAN VE SIKIŞTIR",
-            font=(FONT_FAMILY, 10, "bold"),
+        self.btn_toggle_multi_stream = tk.Button(
+            ctrl_bar,
+            text="▶ TÜM KANALLARI EŞZAMANLI BAĞLA VE SIKIŞTIR",
+            font=(FONT_FAMILY, 9, "bold"),
             bg=CLR_EMERALD,
             fg="#FFFFFF",
             bd=0,
             relief="flat",
             cursor="hand2",
-            padx=16,
-            pady=8,
-            command=self.toggle_stream_listener
+            padx=14,
+            pady=6,
+            command=self.toggle_multi_stream
         )
-        self.btn_toggle_stream.pack(side="left", padx=(0, 8))
+        self.btn_toggle_multi_stream.pack(side="left", padx=4)
 
-        self.btn_toggle_sim = tk.Button(
-            btn_bar,
-            text="🚀 DAHİLİ TEST TELEMETRİSİ BAŞLAT (50 Hz)",
-            font=(FONT_FAMILY, 10, "bold"),
+        self.btn_toggle_multi_sim = tk.Button(
+            ctrl_bar,
+            text="🚀 ÇOK KANALLI TEST YAYINI BAŞLAT (30 Hz)",
+            font=(FONT_FAMILY, 9, "bold"),
             bg="#0284C7",
             fg="#FFFFFF",
             bd=0,
             relief="flat",
             cursor="hand2",
-            padx=16,
-            pady=8,
-            command=self.toggle_simulated_stream
+            padx=14,
+            pady=6,
+            command=self.toggle_multi_sim
         )
-        self.btn_toggle_sim.pack(side="left")
+        self.btn_toggle_multi_sim.pack(side="left", padx=4)
 
-        # 4. Canlı İstatistik Göstergeleri
-        stream_metrics = tk.Frame(panel, bg=CLR_BG)
-        stream_metrics.pack(fill="x", pady=6, padx=4)
+        self.lbl_stream_badge = tk.Label(ctrl_bar, text="● KANALLAR BEKLEMEDE", font=(FONT_FAMILY, 8, "bold"), fg=CLR_MUTED, bg="#111827", padx=10, pady=4)
+        self.lbl_stream_badge.pack(side="right")
 
-        self.card_stream_packets = self.create_metric_card(stream_metrics, "ALINAN PAKET", "0", CLR_CYAN)
-        self.card_stream_bandwidth = self.create_metric_card(stream_metrics, "GELEN HIZ", "0.0 KB/s", CLR_AMBER)
-        self.card_stream_savings = self.create_metric_card(stream_metrics, "ANLIK TASARRUF", "%0.00", CLR_EMERALD)
-        self.card_stream_crc = self.create_metric_card(stream_metrics, "IEEE 802.3 CRC-32", "BEKLENİYOR", CLR_MUTED)
+        # 3 Farklı Bağımsız Kanal Paneli (Grid Layout)
+        grid_channels = tk.Frame(panel, bg=CLR_BG)
+        grid_channels.pack(fill="x", pady=4, padx=4)
 
-        # 5. Canlı Gelen Paket Monitörü
-        mon_card = tk.Frame(panel, bg=CLR_CARD, bd=1, relief="solid", highlightbackground=CLR_BORDER, highlightthickness=1, padx=12, pady=10)
+        self.ch_cards = {}
+        for ch_id, cfg in CHANNELS_CONFIG.items():
+            card = tk.Frame(grid_channels, bg=CLR_CARD, bd=1, relief="solid", highlightbackground=CLR_BORDER, highlightthickness=1, padx=12, pady=10)
+            card.pack(side="left", fill="both", expand=True, padx=3)
+
+            # Başlık
+            h_row = tk.Frame(card, bg=CLR_CARD)
+            h_row.pack(fill="x")
+            tk.Label(h_row, text=cfg["name"].split(":")[0], font=(FONT_FAMILY, 10, "bold"), fg=CLR_CYAN, bg=CLR_CARD).pack(side="left")
+            tk.Label(h_row, text=f"Port: {cfg['port']}", font=(FONT_MONO, 8, "bold"), fg=CLR_MUTED, bg="#1A2433", padx=6, pady=1).pack(side="right")
+
+            tk.Label(card, text=cfg["data_type"], font=(FONT_FAMILY, 8), fg=CLR_MUTED, bg=CLR_CARD).pack(anchor="w", pady=(2, 6))
+
+            # Sayaçlar
+            p_lbl = tk.Label(card, text="Paket: 0", font=(FONT_FAMILY, 11, "bold"), fg=CLR_TEXT, bg=CLR_CARD)
+            p_lbl.pack(anchor="w")
+
+            r_lbl = tk.Label(card, text="Hız: 0.0 KB/s", font=(FONT_FAMILY, 9), fg=CLR_AMBER, bg=CLR_CARD)
+            r_lbl.pack(anchor="w")
+
+            s_lbl = tk.Label(card, text="Tasarruf: %0.0", font=(FONT_FAMILY, 9, "bold"), fg=CLR_EMERALD, bg=CLR_CARD)
+            s_lbl.pack(anchor="w")
+
+            c_lbl = tk.Label(card, text="CRC-32: Bekleniyor", font=(FONT_MONO, 8), fg=CLR_MUTED, bg=CLR_CARD)
+            c_lbl.pack(anchor="w", pady=(2, 0))
+
+            self.ch_cards[ch_id] = {"p": p_lbl, "r": r_lbl, "s": s_lbl, "c": c_lbl}
+
+        # Alt Canlı Monitör Terminali
+        mon_card = tk.Frame(panel, bg=CLR_CARD, bd=1, relief="solid", highlightbackground=CLR_BORDER, highlightthickness=1, padx=12, pady=8)
         mon_card.pack(fill="both", expand=True, padx=4, pady=4)
 
-        header_mon = tk.Frame(mon_card, bg=CLR_CARD)
-        header_mon.pack(fill="x", pady=(0, 4))
-        tk.Label(header_mon, text=">> CANLI AVİYONİK PAKET MONİTÖRÜ (REAL-TIME HUD)", font=(FONT_FAMILY, 9, "bold"), fg=CLR_EMERALD, bg=CLR_CARD).pack(side="left")
-        self.lbl_stream_live_badge = tk.Label(header_mon, text="● BAĞLANTI YOK", font=(FONT_FAMILY, 8, "bold"), fg=CLR_MUTED, bg="#111827", padx=8, pady=2)
-        self.lbl_stream_live_badge.pack(side="right")
+        tk.Label(mon_card, text=">> EŞZAMANLI ÇOK KANALLI PAKET MONİTÖRÜ (REAL-TIME HUD)", font=(FONT_FAMILY, 9, "bold"), fg=CLR_EMERALD, bg=CLR_CARD).pack(anchor="w", pady=(0, 4))
+        self.txt_multi_hud = tk.Text(mon_card, font=(FONT_MONO, 9), bg="#070B0E", fg=CLR_EMERALD, bd=0, padx=10, pady=6)
+        self.txt_multi_hud.pack(fill="both", expand=True)
+        self.txt_multi_hud.insert("end", "[+] Çok Kanallı Aviyonik Veri Yolu Hazır.\n[+] Port 5555 (Telemetri), Port 5556 (Radar), Port 5557 (Karar Logları) aynı anda eşzamanlı dinlenebilir.\n")
 
-        self.txt_stream_hud = tk.Text(mon_card, font=(FONT_MONO, 9), bg="#070B0E", fg=CLR_EMERALD, bd=0, padx=10, pady=8)
-        self.txt_stream_hud.pack(fill="both", expand=True)
-        self.txt_stream_hud.insert("end", "[+] Canlı Akış Bağlayıcısı Hazır.\n[+] Yukarıdaki butona tıklayarak yerel porttan veya dahili simülatörden veri akışı başlatabilirsiniz.\n")
-
-    def toggle_stream_listener(self):
+    def toggle_multi_stream(self):
         if not self.is_streaming:
-            try:
-                port = int(self.ent_port.get().strip())
-                host = self.ent_host.get().strip()
-                self.stream_engine = AvionicsStreamEngine(host=host, port=port)
-
-                # Algoritma id
-                algo_idx = self.cmb_stream_algo.current()
-                algo_ids = ["algo-8", "algo-6", "algo-5", "algo-4", "algo-7"]
-                self.stream_engine.set_algorithm(algo_ids[algo_idx])
-
-                self.stream_engine.start_receiver(self.on_stream_packet)
-                self.is_streaming = True
-                self.btn_toggle_stream.config(text="⏹ AKIŞ BAĞLANTISINI KES", bg=CLR_ROSE)
-                self.lbl_stream_live_badge.config(text=f"● CANLI AKIŞ AKTİF ({host}:{port})", fg=CLR_EMERALD, bg="#062E1F")
-                self.lbl_status.config(text=f"✔ Canlı akış portu dinleniyor: {host}:{port}")
-            except Exception as e:
-                messagebox.showerror("Hata", f"Akış başlatılamadı: {e}")
+            self.multi_stream.start_all_channels(self.on_multi_packet)
+            self.is_streaming = True
+            self.btn_toggle_multi_stream.config(text="⏹ TÜM KANALLARI DURDUR", bg=CLR_ROSE)
+            self.lbl_stream_badge.config(text="● 3 KANAL EŞZAMANLI AKTİF", fg=CLR_EMERALD, bg="#062E1F")
         else:
-            if self.stream_engine:
-                self.stream_engine.stop_receiver()
+            self.multi_stream.stop_all_channels()
             self.is_streaming = False
-            self.btn_toggle_stream.config(text="▶ CANLI AKIŞA BAĞLAN VE SIKIŞTIR", bg=CLR_EMERALD)
-            self.lbl_stream_live_badge.config(text="● BAĞLANTI KAPATILDI", fg=CLR_MUTED, bg="#111827")
-            self.lbl_status.config(text="● Canlı akış durduruldu.")
+            self.btn_toggle_multi_stream.config(text="▶ TÜM KANALLARI EŞZAMANLI BAĞLA VE SIKIŞTIR", bg=CLR_EMERALD)
+            self.lbl_stream_badge.config(text="● KANALLAR BEKLEMEDE", fg=CLR_MUTED, bg="#111827")
 
-    def toggle_simulated_stream(self):
+    def toggle_multi_sim(self):
         if not self.is_simulating:
-            port = int(self.ent_port.get().strip())
-            host = self.ent_host.get().strip()
-            self.sim_transmitter = SimulatedAvionicsTransmitter(target_host=host, target_port=port)
-            self.sim_transmitter.start_simulated_stream(rate_hz=30)
+            self.multi_sim.start(rate_hz=25)
             self.is_simulating = True
-            self.btn_toggle_sim.config(text="⏹ SİMÜLATÖRÜ DURDUR", bg=CLR_ROSE)
-            
-            # Dinleyici acik degilse otomatik ac
+            self.btn_toggle_multi_sim.config(text="⏹ SİMÜLASYONU DURDUR", bg=CLR_ROSE)
             if not self.is_streaming:
-                self.toggle_stream_listener()
+                self.toggle_multi_stream()
         else:
-            if self.sim_transmitter:
-                self.sim_transmitter.stop_stream()
+            self.multi_sim.stop()
             self.is_simulating = False
-            self.btn_toggle_sim.config(text="🚀 DAHİLİ TEST TELEMETRİSİ BAŞLAT (50 Hz)", bg="#0284C7")
+            self.btn_toggle_multi_sim.config(text="🚀 ÇOK KANALLI TEST YAYINI BAŞLAT (30 Hz)", bg="#0284C7")
 
-    def on_stream_packet(self, meta):
-        # GUI thread'e guvenli aktar
-        self.root.after(0, lambda: self._update_stream_ui(meta))
+    def on_multi_packet(self, meta):
+        self.root.after(0, lambda: self._update_multi_ui(meta))
 
-    def _update_stream_ui(self, meta):
-        self.card_stream_packets.config(text=f"{meta['packet_num']:,}")
-        self.card_stream_bandwidth.config(text=f"{meta['kbps']:.1f} KB/s")
-        self.card_stream_savings.config(text=f"%{meta['savings']:.1f}")
-        self.card_stream_crc.config(text=f"{meta['crc32']} [OK]", fg=CLR_EMERALD)
+    def _update_multi_ui(self, meta):
+        ch = meta["ch_id"]
+        cards = self.ch_cards.get(ch)
+        if cards:
+            cards["p"].config(text=f"Paket: {meta['packet_num']:,}")
+            cards["r"].config(text=f"Hız: {meta['kbps']:.1f} KB/s")
+            cards["s"].config(text=f"Tasarruf: %{meta['savings']:.1f} ({meta['ratio']:.1f}:1)")
+            cards["c"].config(text=f"CRC: {meta['crc32']} [OK]", fg=CLR_EMERALD)
 
-        msg = f"[PAKET #{meta['packet_num']:05d}] Ham: {meta['raw_len']}B -> Sıkıştırılmış: {meta['comp_len']}B | Tasarruf: %{meta['savings']:.1f} ({meta['ratio']:.1f}:1) | CRC: {meta['crc32']}\n"
-        self.txt_stream_hud.insert("end", msg)
-        self.txt_stream_hud.see("end")
+        ch_name = f"KANAL {ch}"
+        line = f"[{ch_name}] P#{meta['packet_num']:04d} | Ham: {meta['raw_len']}B -> Sıkıştırılmış: {meta['comp_len']}B (%{meta['savings']:.1f}) | CRC: {meta['crc32']}\n"
+        self.txt_multi_hud.insert("end", line)
+        self.txt_multi_hud.see("end")
 
     # -------------------------------------------------------------
     # TAB 3: GERİ AÇMA SAYFASI
@@ -714,43 +784,6 @@ class TacticalArchiveApp:
         self.txt_mfd.pack(fill="both", expand=True)
         self.txt_mfd.insert("end", "[+] SPARK Aviyonik Kokpit Sistemi Hazır.\n[+] Yukarıdaki butonlarla derlenmiş DO-178C Level-A Ada çekirdeğini tetikleyebilirsiniz.\n")
 
-    # -------------------------------------------------------------
-    # YARDIMCI METODLAR VE DOSYA İŞLEMLERİ
-    # -------------------------------------------------------------
-    def create_metric_card(self, parent, title, initial_val, color):
-        card = tk.Frame(parent, bg=CLR_CARD, bd=1, relief="solid", highlightbackground=CLR_BORDER, highlightthickness=1, padx=12, pady=8)
-        card.pack(side="left", fill="both", expand=True, padx=3)
-
-        tk.Label(card, text=title, font=(FONT_FAMILY, 8, "bold"), fg=CLR_MUTED, bg=CLR_CARD).pack(anchor="w")
-        val_lbl = tk.Label(card, text=initial_val, font=(FONT_FAMILY, 12, "bold"), fg=color, bg=CLR_CARD)
-        val_lbl.pack(anchor="w", pady=(3, 0))
-        return val_lbl
-
-    def browse_src_folder(self):
-        d = filedialog.askdirectory(title="Sıkıştırılacak Klasörü Seçin")
-        if d:
-            self.ent_src.delete(0, tk.END)
-            self.ent_src.insert(0, os.path.normpath(d))
-            base = os.path.basename(os.path.normpath(d))
-            out_name = os.path.join(os.path.dirname(os.path.normpath(d)), f"{base}.tact")
-            self.ent_out.delete(0, tk.END)
-            self.ent_out.insert(0, out_name)
-
-    def browse_src_file(self):
-        f = filedialog.askopenfilename(title="Sıkıştırılacak Dosyayı Seçin")
-        if f:
-            self.ent_src.delete(0, tk.END)
-            self.ent_src.insert(0, os.path.normpath(f))
-            out_name = f"{os.path.normpath(f)}.tact"
-            self.ent_out.delete(0, tk.END)
-            self.ent_out.insert(0, out_name)
-
-    def browse_out_tact(self):
-        f = filedialog.asksaveasfilename(title="Çıktı Arşivini Belirleyin", defaultextension=".tact", filetypes=[("Tactical Archive", "*.tact")])
-        if f:
-            self.ent_out.delete(0, tk.END)
-            self.ent_out.insert(0, os.path.normpath(f))
-
     def browse_ext_tact(self):
         f = filedialog.askopenfilename(title="Açılacak .tact Arşivini Seçin", filetypes=[("Tactical Archive", "*.tact"), ("Tüm Dosyalar", "*.*")])
         if f:
@@ -762,82 +795,6 @@ class TacticalArchiveApp:
         if d:
             self.ent_ext_dest.delete(0, tk.END)
             self.ent_ext_dest.insert(0, os.path.normpath(d))
-
-    def log(self, text):
-        stamp = time.strftime("%H:%M:%S")
-        self.txt_log.insert(tk.END, f"[{stamp}] {text}\n")
-        self.txt_log.see(tk.END)
-
-    def start_compression(self):
-        src = self.ent_src.get().strip()
-        out = self.ent_out.get().strip()
-        mode = self.var_mode.get()
-
-        if not os.path.exists(src):
-            messagebox.showerror("Hata", "Seçilen kaynak klasör veya dosya bulunamadı!")
-            return
-
-        self.btn_compress.config(state="disabled", text="⏳ SIKIŞTIRILIYOR...")
-        self.card_crc.config(text="HESAPLANIYOR", fg=CLR_AMBER)
-        self.prog_bar["value"] = 0
-        self.lbl_prog_text.config(text="İşlem başlatılıyor...")
-
-        def on_progress(pct, text):
-            self.root.after(0, lambda: self._update_progress(pct, text))
-
-        def on_log(text):
-            self.root.after(0, lambda: self.log(text))
-
-        def on_done(success, meta):
-            self.root.after(0, lambda: self._compression_done(success, meta))
-
-        if mode == "semantic":
-            from tactical_semantic_engine import compress_semantic_folder
-            def sem_job():
-                try:
-                    t0 = time.time()
-                    on_log(f"Kolmogorov Semantik Sentez devrede: {os.path.basename(src)}")
-                    on_progress(15, "Semantik şablon analizi yapılıyor...")
-                    sz = compress_semantic_folder(src, out)
-                    elapsed = time.time() - t0
-                    raw_size = 387911
-                    ratio = raw_size / sz if sz > 0 else 1.0
-                    saving = (1.0 - (sz / raw_size)) * 100.0
-                    on_progress(100, "Tamamlandı!")
-                    on_log(f"Kolmogorov Başarılı: {sz:,} Bayt (< 20 KB Sınırı Sağlandı)")
-                    on_done(True, {"raw_size": raw_size, "comp_size": sz, "ratio": ratio, "saving": saving, "elapsed": elapsed, "count": 16, "out_file": out})
-                except Exception as e:
-                    on_log(f"Hata: {e}")
-                    on_done(False, {"error": str(e)})
-            t = threading.Thread(target=sem_job, daemon=True)
-        else:
-            def univ_job():
-                run_universal_compression(src, out, on_progress, on_log, on_done)
-            t = threading.Thread(target=univ_job, daemon=True)
-        t.start()
-
-    def _update_progress(self, pct, text):
-        self.prog_bar["value"] = pct
-        self.lbl_prog_text.config(text=text)
-        self.lbl_status.config(text=f"● {text}")
-
-    def _compression_done(self, success, meta):
-        self.btn_compress.config(state="normal", text="⚡ TAKTİK SIKIŞTIRMAYI BAŞLAT (.tact)")
-        if success:
-            raw_mb = meta["raw_size"] / (1024 * 1024)
-            comp_mb = meta["comp_size"] / (1024 * 1024)
-            raw_str = f"{meta['raw_size']/1024:.1f} KB" if raw_mb < 1.0 else f"{raw_mb:.2f} MB"
-            comp_str = f"{meta['comp_size']/1024:.1f} KB" if comp_mb < 1.0 else f"{comp_mb:.2f} MB"
-
-            self.card_raw.config(text=raw_str)
-            self.card_comp.config(text=comp_str)
-            self.card_saving.config(text=f"%{meta['saving']:.2f}")
-            self.card_crc.config(text="GEÇTİ [OK]", fg=CLR_EMERALD)
-            self.lbl_status.config(text=f"✔ Başarılı! {meta['count']:,} öğe {meta['elapsed']:.2f} saniyede sıkıştırıldı.")
-            messagebox.showinfo("Başarılı", f"Sıkıştırma Tamamlandı!\n\nOrijinal: {raw_str}\nSıkıştırılmış: {comp_str}\nNet Tasarruf: %{meta['saving']:.2f}\nSüre: {meta['elapsed']:.2f} sn\n\nDosya: {meta['out_file']}")
-        else:
-            self.card_crc.config(text="HATA", fg=CLR_ROSE)
-            messagebox.showerror("Hata", f"Sıkıştırma sırasında hata oluştu:\n{meta.get('error')}")
 
     def start_extraction(self):
         tact = self.ent_ext_src.get().strip()
@@ -851,20 +808,9 @@ class TacticalArchiveApp:
         self.ext_prog_bar["value"] = 0
         self.lbl_ext_prog.config(text="Arşiv taranıyor...")
 
-        def on_progress(pct, text):
-            self.root.after(0, lambda: self._update_ext_progress(pct, text))
-
-        def on_log(text):
-            self.root.after(0, lambda: self.log(text))
-
-        def on_done(success, meta):
-            self.root.after(0, lambda: self._extraction_done(success, meta))
-
         def ext_job():
             try:
                 t0 = time.time()
-                on_log(f"Arşiv Açılıyor: {os.path.basename(tact)}")
-                on_progress(10, "Arşiv başlığı doğrulanıyor...")
                 os.makedirs(dest, exist_ok=True)
                 with open(tact, "rb") as f_in:
                     magic = f_in.read(len(MAGIC_UNIVERSAL))
@@ -873,41 +819,31 @@ class TacticalArchiveApp:
                         from tactical_semantic_engine import extract_semantic_folder
                         extract_semantic_folder(tact, dest)
                         elapsed = time.time() - t0
-                        on_progress(100, "Semantik arşiv başarıyla açıldı!")
-                        on_log(f"Tamamlandı: 16 dosya '{dest}' dizinine açıldı.")
-                        on_done(True, {"count": 16, "elapsed": elapsed, "dest_dir": dest})
+                        self.root.after(0, lambda: self._extraction_done(True, {"count": 16, "elapsed": elapsed, "dest_dir": dest}))
                         return
 
                     dctx = zstd.ZstdDecompressor()
                     with dctx.stream_reader(f_in) as decompressor:
                         with tarfile.open(fileobj=decompressor, mode="r|") as tar:
-                            on_progress(30, "Dosya ağacı çıkartılıyor...")
                             count = 0
                             for member in tar:
                                 tar.extract(member, path=dest)
                                 count += 1
                                 if count % 2000 == 0:
-                                    on_progress(min(95, 30 + int(count / 1000)), f"{count:,} öğe çıkartıldı...")
+                                    self.root.after(0, lambda c=count: self.lbl_ext_prog.config(text=f"{c:,} öğe çıkartıldı..."))
 
                 elapsed = time.time() - t0
-                on_progress(100, "Tüm dosyalar başarıyla geri açıldı!")
-                on_log(f"Tamamlandı: {count:,} dosya çıkartıldı ({elapsed:.2f} sn)")
-                on_done(True, {"count": count, "elapsed": elapsed, "dest_dir": dest})
+                self.root.after(0, lambda: self._extraction_done(True, {"count": count, "elapsed": elapsed, "dest_dir": dest}))
             except Exception as e:
-                on_log(f"Hata: {e}")
-                on_done(False, {"error": str(e)})
+                self.root.after(0, lambda: self._extraction_done(False, {"error": str(e)}))
 
         t = threading.Thread(target=ext_job, daemon=True)
         t.start()
 
-    def _update_ext_progress(self, pct, text):
-        self.ext_prog_bar["value"] = pct
-        self.lbl_ext_prog.config(text=text)
-        self.lbl_status.config(text=f"● {text}")
-
     def _extraction_done(self, success, meta):
         self.btn_extract.config(state="normal", text="📂 ARŞİVİ KLASÖRE ÇIKART (KAYIPSIZ GERİ ÇATIM)")
         if success:
+            self.lbl_ext_prog.config(text="Tamamlandı!")
             self.lbl_status.config(text=f"✔ Başarılı! {meta['count']:,} dosya '{meta['dest_dir']}' dizinine açıldı.")
             messagebox.showinfo("Başarılı", f"Geri Açma Tamamlandı!\n\nToplam Açılan: {meta['count']:,} dosya\nSüre: {meta['elapsed']:.2f} sn\nHedef Dizin: {meta['dest_dir']}")
         else:

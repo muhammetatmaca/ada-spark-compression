@@ -1,5 +1,5 @@
 @echo off
-title Tactical Archive Studio - Ada SPARK Avionics
+title Tactical Archive Studio - Avionics Edition
 color 0B
 echo =========================================================================
 echo   TACTICAL ARCHIVE STUDIO - STANAG-4586 / DO-178C LEVEL-A ENGINE

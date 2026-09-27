@@ -5,7 +5,7 @@
 [![Standards: STANAG--4586](https://img.shields.io/badge/Standard-STANAG--4586-emerald.svg)](#)
 [![Safety: DO--178C_Level--A](https://img.shields.io/badge/Safety-DO--178C_Level--A-cyan.svg)](#)
 [![Integrity: IEEE_802.3_CRC32](https://img.shields.io/badge/Integrity-IEEE_802.3_CRC32-brightgreen.svg)](#)
-[![Ada SPARK Avionics](https://img.shields.io/badge/Ada SPARK Aviyonik-2026_Edition-orange.svg)](#)
+[![Edition: Enterprise_Avionics](https://img.shields.io/badge/Edition-Enterprise_Avionics-blueviolet.svg)](#)
 
 ---
 
@@ -100,4 +100,4 @@ Her `.tact` bloğu açılırken ve sıkıştırılırken **IEEE 802.3 CRC-32** d
 ---
 
 ## 📄 Lisans
-Bu proje [MIT Lisansı](LICENSE) kapsamında açık kaynak olarak yayınlanmıştır. Ada SPARK Aviyonik, savunma sanayii ve akademik araştırmalarda serbestçe kullanılabilir.
+Bu proje [MIT Lisansı](LICENSE) kapsamında açık kaynak olarak yayınlanmıştır. Savunma sanayii, havacılık ve akademik araştırmalarda serbestçe kullanılabilir.
